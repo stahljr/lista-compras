@@ -190,6 +190,12 @@ addColumn('products', 'category_locked', 'INTEGER NOT NULL DEFAULT 0');
 // significa "onde estiver mais barato", que continua sendo o padrao.
 addColumn('list_items', 'market', 'TEXT');
 addColumn('trip_items', 'market', 'TEXT');
+// Dentro do corredor: a subdivisao ("agua", "refrigerante") e o tamanho lido
+// do nome, para filtrar sem ter de reprocessar o nome a cada busca.
+addColumn('products', 'subcategory', 'TEXT');
+addColumn('products', 'size_label', 'TEXT');
+addColumn('products', 'size_value', 'REAL');
+addColumn('products', 'size_kind', 'TEXT');
 
 // Nomes antigos: o "carrinho" era uma lista, antes de o carrinho passar a ser
 // a ida ao mercado montada a partir de uma ou mais listas.
@@ -223,6 +229,8 @@ CREATE TABLE IF NOT EXISTS trip_item_sources (
 );
 CREATE INDEX IF NOT EXISTS idx_trip_item_sources_item ON trip_item_sources(trip_item_id);
 `);
+
+db.exec('CREATE INDEX IF NOT EXISTS idx_products_sub ON products(category, subcategory)');
 
 // Chave/valor para controle interno (versao do classificador, por exemplo).
 db.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);

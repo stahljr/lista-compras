@@ -1,6 +1,7 @@
 import { db, metaGet, metaSet } from './db.js';
 import { fold, classify, CATEGORIES } from './categories.js';
 import { termosDe } from './catalog-terms.js';
+import { subclassify, parseSize, subsOf } from './facets.js';
 import { MARKETS, MARKET_BY_KEY, acrossMarkets } from './markets/index.js';
 
 const SEARCH_TTL_MINUTES = Number(process.env.SEARCH_TTL_MINUTES || 360);
@@ -46,6 +47,9 @@ const q = {
       updated_at = datetime('now')
   `),
   offersFor: db.prepare('SELECT * FROM offers WHERE product_id = ? ORDER BY price'),
+  setDerived: db.prepare(
+    'UPDATE products SET subcategory = ?, size_label = ?, size_value = ?, size_kind = ? WHERE id = ?',
+  ),
   readCache: db.prepare(`
     SELECT product_ids FROM search_cache
      WHERE market = ? AND term = ?
@@ -57,6 +61,24 @@ const q = {
     ON CONFLICT(market, term) DO UPDATE SET product_ids = excluded.product_ids, fetched_at = datetime('now')
   `),
 };
+
+/**
+ * Subdivisao e tamanho saem do nome, e o nome vem do mercado -- entao valem
+ * ser recalculados sempre que o produto entra ou muda de categoria. A escrita
+ * so acontece se algo mudou: no seed sao milhares de ofertas.
+ */
+function refreshDerived(product) {
+  const sub = subclassify(product.category, product.name);
+  const size = parseSize(product.name);
+  if (
+    (product.subcategory ?? null) === sub &&
+    (product.size_label ?? null) === (size?.label ?? null) &&
+    (product.size_value ?? null) === (size?.value ?? null)
+  ) {
+    return;
+  }
+  q.setDerived.run(sub, size?.label ?? null, size?.value ?? null, size?.kind ?? null, product.id);
+}
 
 /** Grava (ou atualiza) um produto vindo de um mercado e devolve o id interno. */
 export const saveOffer = db.transaction((item) => {
@@ -81,7 +103,9 @@ export const saveOffer = db.transaction((item) => {
       imageUrl: item.imageUrl || null,
       category: item.category || 'outros',
     });
+    product = q.productById.get(product.id);
   }
+  refreshDerived(product);
   q.upsertOffer.run({
     productId: product.id,
     market: item.market.key,
@@ -125,6 +149,8 @@ export function hydrate(productId) {
     name: product.name,
     brand: product.brand,
     category: product.category,
+    subcategory: product.subcategory,
+    sizeLabel: product.size_label,
     imageUrl: product.image_url,
     unit: product.unit,
     categoryLocked: !!product.category_locked,
@@ -284,6 +310,88 @@ export function productsByCategory(category, { limit = 60, offset = 0 } = {}) {
 }
 
 /**
+ * O corredor com os filtros que afunilam: tipo, marca e tamanho.
+ *
+ * A contagem de cada filtro ignora a propria dimensao -- com "Refrigerante"
+ * marcado, a lista de marcas mostra quantos refrigerantes cada marca tem, e a
+ * de tipos continua mostrando o corredor inteiro. E o que permite trocar de
+ * tipo sem ficar sem resultado nenhum.
+ *
+ * Um corredor tem centenas de produtos, nao milhares: sai numa consulta e o
+ * cruzamento e feito aqui, que fica mais simples de ler do que seis SQLs.
+ */
+export function categoryView(category, { sub = null, brand = null, size = null, limit = 60, offset = 0 } = {}) {
+  const rows = db
+    .prepare(
+      `SELECT p.id, p.name, p.brand, p.subcategory, p.size_label, p.size_value,
+              COUNT(DISTINCT o.market) AS mercados
+         FROM products p
+         JOIN offers o ON o.product_id = p.id AND o.price > 0
+        WHERE p.category = ?
+        GROUP BY p.id
+        ORDER BY mercados DESC, p.name`,
+    )
+    .all(category);
+
+  const casaSub = (r) => !sub || (sub === 'outros' ? !r.subcategory : r.subcategory === sub);
+  const casaMarca = (r) => !brand || r.brand === brand;
+  const casaTamanho = (r) => !size || r.size_label === size;
+  const casa = (r, exceto) =>
+    (exceto === 'sub' || casaSub(r)) && (exceto === 'brand' || casaMarca(r)) && (exceto === 'size' || casaTamanho(r));
+
+  const contar = (exceto, campo) => {
+    const mapa = new Map();
+    for (const r of rows) {
+      if (!casa(r, exceto)) continue;
+      const valor = r[campo];
+      if (valor == null || valor === '') continue;
+      const atual = mapa.get(valor) || { count: 0, ordem: r.size_value ?? 0 };
+      atual.count += 1;
+      mapa.set(valor, atual);
+    }
+    return mapa;
+  };
+
+  const porSub = contar('sub', 'subcategory');
+  const porMarca = contar('brand', 'brand');
+  const porTamanho = contar('size', 'size_label');
+
+  const subs = subsOf(category)
+    .filter((s) => porSub.has(s.key))
+    .map((s) => ({ ...s, count: porSub.get(s.key).count }));
+  // Nem todo produto cai numa regra; sem esta linha eles ficariam invisiveis
+  // para quem estivesse filtrando.
+  const semSub = rows.filter((r) => casa(r, 'sub') && !r.subcategory).length;
+  if (semSub && subs.length) subs.push({ key: 'outros', label: 'Outros', count: semSub });
+
+  const brands = [...porMarca.entries()]
+    .map(([key, v]) => ({ key, label: key, count: v.count }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'pt-BR'))
+    .slice(0, 24);
+
+  // Corta pelos tamanhos mais comuns e so depois ordena do menor para o
+  // maior: cortar na ordem de tamanho jogaria fora justamente o "5 kg".
+  // Tamanho de um produto so nao e filtro, e ficava na frente da fila
+  // empurrando o "1 kg" para fora da tela -- some, a menos que sobre pouco.
+  const todosTamanhos = [...porTamanho.entries()]
+    .map(([key, v]) => ({ key, label: key, count: v.count, ordem: v.ordem }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 16);
+  const usados = todosTamanhos.filter((t) => t.count > 1);
+  const sizes = (usados.length >= 2 ? usados : todosTamanhos)
+    .sort((a, b) => a.ordem - b.ordem)
+    .map(({ ordem, ...resto }) => resto);
+
+  const filtrados = rows.filter((r) => casa(r, null));
+  const products = filtrados
+    .slice(offset, offset + limit)
+    .map((r) => hydrate(r.id))
+    .filter(Boolean);
+
+  return { products, total: filtrados.length, facets: { subs, brands, sizes } };
+}
+
+/**
  * As prateleiras da home: cada categoria com alguns produtos, numa consulta so.
  * Sem isso a tela inicial faria uma chamada por categoria.
  */
@@ -357,30 +465,35 @@ export async function fillCategory(key, { minimo = 12 } = {}) {
 
 // Suba este numero ao mexer nas regras de categoria: a categoria fica gravada
 // no produto, entao corrigir a regra nao arruma sozinho o que ja foi salvo.
-const CLASSIFIER_VERSION = 3;
+const CLASSIFIER_VERSION = 5;
 
 /**
  * Reclassifica o catalogo com as regras atuais. Usa a categoria que o mercado
  * informou (guardada na oferta) mais o nome, do mesmo jeito que na entrada.
  */
 export function reclassifyAll() {
+  // Produto com categoria travada tambem entra: a categoria dele nao se mexe,
+  // mas subdivisao e tamanho vem do nome e podem estar por preencher.
   const rows = db
     .prepare(
-      `SELECT p.id, p.name, p.category,
+      `SELECT p.id, p.name, p.category, p.category_locked, p.subcategory, p.size_label, p.size_value,
               (SELECT o.category FROM offers o WHERE o.product_id = p.id AND o.category IS NOT NULL LIMIT 1) AS raw
-         FROM products p
-        WHERE p.category_locked = 0`,
+         FROM products p`,
     )
     .all();
   const update = db.prepare('UPDATE products SET category = ? WHERE id = ?');
   let mudados = 0;
   const run = db.transaction(() => {
     for (const row of rows) {
-      const nova = classify(row.raw || '', row.name);
-      if (nova !== row.category) {
-        update.run(nova, row.id);
-        mudados++;
+      let categoria = row.category;
+      if (!row.category_locked) {
+        categoria = classify(row.raw || '', row.name);
+        if (categoria !== row.category) {
+          update.run(categoria, row.id);
+          mudados++;
+        }
       }
+      refreshDerived({ ...row, category: categoria });
     }
   });
   run();

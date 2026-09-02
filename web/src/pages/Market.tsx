@@ -12,6 +12,8 @@ import { EmptyState, Page, SectionTitle, Topbar } from '@/components/Layout';
 import { ProductCard, ProductCardSkeleton } from '@/components/ProductCard';
 import { ProductDialog } from '@/components/ProductDialog';
 import { Shelf } from '@/components/Shelf';
+import { CategoryFilters, SEM_FILTRO, temFiltro } from '@/components/CategoryFilters';
+import type { Facetas, Filtros } from '@/components/CategoryFilters';
 import type { Product, ShoppingList } from '@/lib/types';
 
 type Corredor = {
@@ -84,6 +86,9 @@ export default function Market() {
   const [falhas, setFalhas] = useState<{ market: string; error: string }[]>([]);
   const [aberto, setAberto] = useState<string | null>(null);
   const [doCorredor, setDoCorredor] = useState<Product[]>([]);
+  const [totalCorredor, setTotalCorredor] = useState(0);
+  const [facetas, setFacetas] = useState<Facetas>({ subs: [], brands: [], sizes: [] });
+  const [filtros, setFiltros] = useState<Filtros>(SEM_FILTRO);
   const [carregando, setCarregando] = useState(false);
   const [added, setAdded] = useState<Record<number, boolean>>({});
   const [erro, setErro] = useState('');
@@ -132,20 +137,46 @@ export default function Market() {
     return () => window.clearTimeout(debounce.current);
   }, [term, buscar]);
 
+  /**
+   * Carrega o corredor com os filtros marcados. A resposta traz tambem as
+   * faixas de filtro (tipo, marca, tamanho) com a contagem de cada uma, ja
+   * cruzada com o que esta marcado.
+   */
+  const carregarCorredor = useCallback(
+    async (key: string, f: Filtros) => {
+      setCarregando(true);
+      try {
+        const busca = new URLSearchParams({ limit: '60' });
+        if (f.sub) busca.set('sub', f.sub);
+        if (f.brand) busca.set('brand', f.brand);
+        if (f.size) busca.set('size', f.size);
+        // O servidor enche o corredor buscando nos mercados quando ainda esta
+        // vazio, entao esta chamada pode levar alguns segundos.
+        const d = await api.get<{ products: Product[]; total: number; facets: Facetas }>(
+          `/catalog/categories/${key}?${busca}`,
+        );
+        setDoCorredor(d.products);
+        setTotalCorredor(d.total ?? d.products.length);
+        setFacetas(d.facets ?? { subs: [], brands: [], sizes: [] });
+      } finally {
+        setCarregando(false);
+      }
+    },
+    [],
+  );
+
   async function abrirCorredor(key: string) {
     setAberto(key);
     setTerm('');
     setDoCorredor([]);
-    setCarregando(true);
-    try {
-      // O servidor enche o corredor buscando nos mercados quando ainda esta
-      // vazio, entao esta chamada pode levar alguns segundos.
-      const d = await api.get<{ products: Product[] }>(`/catalog/categories/${key}?limit=60`);
-      setDoCorredor(d.products);
-      void recarregarCorredores();
-    } finally {
-      setCarregando(false);
-    }
+    setFiltros(SEM_FILTRO);
+    await carregarCorredor(key, SEM_FILTRO);
+    void recarregarCorredores();
+  }
+
+  function filtrar(proximo: Filtros) {
+    setFiltros(proximo);
+    if (aberto) void carregarCorredor(aberto, proximo);
   }
 
   /** Com carrinho aberto o item vai direto pra ele; fora disso, para a lista. */
@@ -173,6 +204,13 @@ export default function Market() {
       setErro(e instanceof Error ? e.message : 'não deu para adicionar');
     }
   }
+
+  const fecharCorredor = () => {
+    setAberto(null);
+    setDoCorredor([]);
+    setFiltros(SEM_FILTRO);
+    setFacetas({ subs: [], brands: [], sizes: [] });
+  };
 
   const grade = 'grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:gap-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6';
   const corredorAberto = corredores.find((c) => c.key === aberto);
@@ -219,7 +257,7 @@ export default function Market() {
                   key={c.key}
                   c={c}
                   ativo={aberto === c.key}
-                  onClick={() => (aberto === c.key ? (setAberto(null), setDoCorredor([])) : void abrirCorredor(c.key))}
+                  onClick={() => (aberto === c.key ? fecharCorredor() : void abrirCorredor(c.key))}
                 />
               ))}
             </div>
@@ -261,9 +299,18 @@ export default function Market() {
 
         {!buscando && aberto && (
           <>
-            <SectionTitle action={<span className="text-muted-foreground text-sm">{doCorredor.length}</span>}>
+            <SectionTitle
+              action={
+                <span className="text-muted-foreground text-sm">
+                  {temFiltro(filtros)
+                    ? `${totalCorredor} de ${corredorAberto?.total ?? totalCorredor}`
+                    : totalCorredor || doCorredor.length}
+                </span>
+              }
+            >
               {corredorAberto?.label}
             </SectionTitle>
+            <CategoryFilters facetas={facetas} filtros={filtros} total={totalCorredor} onChange={filtrar} />
             {carregando && !doCorredor.length ? (
               <>
                 <p className="text-muted-foreground mb-4 text-sm">
@@ -275,6 +322,10 @@ export default function Market() {
                   ))}
                 </div>
               </>
+            ) : !doCorredor.length ? (
+              <EmptyState icon={<Search />} title="Nada com esses filtros">
+                Solte um dos filtros para ver mais — ou toque em Limpar.
+              </EmptyState>
             ) : (
               <div className={grade}>
                 {doCorredor.map((p) => (

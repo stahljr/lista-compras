@@ -18,6 +18,10 @@ export type Product = {
   name: string;
   brand: string | null;
   category: string;
+  /** Subdivisão do corredor tirada do nome: água, refrigerante, cerveja... */
+  subcategory: string | null;
+  /** Tamanho lido do nome, já escrito para ler: "2 L", "500 g", "12x350 ml". */
+  sizeLabel: string | null;
   imageUrl: string | null;
   unit: string;
   offers: Offer[];

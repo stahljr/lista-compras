@@ -67,6 +67,10 @@ const RULES = [
 // Por isso os termos compostos, que quase nao erram, sao testados primeiro --
 // antes das regras genericas e antes mesmo da categoria que a loja informou.
 const ESPECIFICOS = [
+  // Comida de bicho e de bebe vem primeiro de todas: "Alimento para Caes
+  // Sabor Carne, Frango e Arroz" caia na mercearia por causa do arroz.
+  ['pet', /\bracao\b|(para|de) (caes|gatos|cachorros?|felinos|caninos|passaros|peixes|roedores)|dog chow|pedigree|whiskas|friskies|premier pet|golden (formula|special)|areia (higienica|sanitaria)|tapete higienico|antipulgas|bifinho/],
+  ['bebe', /fralda|formula infantil|leite infantil|papinha|lenco umedecido|\bnan (comfor|supreme)|aptamil|milnutri/],
   ['doces', /leite condensado|doce de leite|leite ninho.*(bolo|trufa)/],
   ['matinais', /leite em po|cafe (soluvel|torrado|em capsula|em graos)|achocolatado|cereal matinal|granola|aveia em/],
   ['mercearia', /leite de coco|molho (de )?tomate|extrato (de )?tomate|molho ingles|molho shoyu|maionese|ketchup|mostarda|azeitona|palmito|atum|sardinha em|milho verde em conserva|ervilha em conserva|creme de cebola/],

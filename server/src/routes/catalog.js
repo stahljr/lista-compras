@@ -1,5 +1,5 @@
 import express from 'express';
-import { unifiedSearch, categoryCounts, productsByCategory, shelves, fillCategory, setCategory, setCategoryCover, hydrate, fillMissingOffers, priceStats } from '../catalog.js';
+import { unifiedSearch, categoryCounts, productsByCategory, categoryView, shelves, fillCategory, setCategory, setCategoryCover, hydrate, fillMissingOffers, priceStats } from '../catalog.js';
 import { CATEGORIES, CATEGORY_BY_KEY } from '../categories.js';
 import { marketInfo } from '../markets/index.js';
 import { requireAuth } from '../auth.js';
@@ -38,16 +38,23 @@ catalogRouter.get('/shelves', (req, res) => {
 catalogRouter.get('/categories/:key', async (req, res, next) => {
   try {
     const key = req.params.key;
-    const limit = Math.min(Number(req.query.limit) || 60, 100);
-    const offset = Number(req.query.offset) || 0;
-    let products = productsByCategory(key, { limit, offset });
+    const filtros = {
+      limit: Math.min(Number(req.query.limit) || 60, 100),
+      offset: Number(req.query.offset) || 0,
+      sub: req.query.sub ? String(req.query.sub) : null,
+      brand: req.query.brand ? String(req.query.brand) : null,
+      size: req.query.size ? String(req.query.size) : null,
+    };
+    let view = categoryView(key, filtros);
     // Corredor vazio (ou quase) busca nos mercados na hora, para nao mostrar
-    // prateleira vazia so porque o seed ainda nao passou por ali.
-    if (req.query.fill !== '0' && !offset && products.length < 12) {
+    // prateleira vazia so porque o seed ainda nao passou por ali. Com filtro
+    // marcado nao faz sentido: pouco resultado ali e o filtro funcionando.
+    const semFiltro = !filtros.sub && !filtros.brand && !filtros.size;
+    if (req.query.fill !== '0' && semFiltro && !filtros.offset && view.products.length < 12) {
       await fillCategory(key);
-      products = productsByCategory(key, { limit, offset });
+      view = categoryView(key, filtros);
     }
-    res.json({ products });
+    res.json(view);
   } catch (err) {
     next(err);
   }
