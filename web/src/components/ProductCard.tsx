@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { money, quantity as fmtQty } from '@/lib/format';
+import { roundQty, stepOf } from '@/lib/unit';
 import type { Product } from '@/lib/types';
 
 export const EMOJI: Record<string, string> = {
@@ -26,10 +27,24 @@ export function savingsOf(product: Product) {
  * O produto como numa gondola: foto grande no topo, o quanto se economiza
  * escolhendo o mercado certo, preco em destaque, quantidade e um botao largo.
  */
-export function ProductCard({ product, onAdd, added }: { product: Product; onAdd: (qty: number) => void; added?: boolean }) {
+export function ProductCard({
+  product,
+  onAdd,
+  onOpen,
+  added,
+}: {
+  product: Product;
+  onAdd: (qty: number, unit?: string) => void;
+  onOpen?: () => void;
+  added?: boolean;
+}) {
   const [quebrada, setQuebrada] = useState(false);
   const [carregada, setCarregada] = useState(false);
-  const [qty, setQty] = useState(1);
+  // Passo do contador segue a unidade do mercado: meio quilo por toque no que
+  // e vendido a peso, uma unidade no resto.
+  const passo = stepOf(product.unit);
+  const inicial = passo >= 100 ? 500 : 1;
+  const [qty, setQty] = useState(inicial);
   const melhor = product.cheapest;
   const outros = Math.max(0, product.marketsCount - 1);
   const economia = savingsOf(product);
@@ -45,7 +60,13 @@ export function ProductCard({ product, onAdd, added }: { product: Product; onAdd
 
       {/* Fundo claro fixo: a foto dos mercados vem recortada em branco, e no
           tema escuro um fundo escuro deixaria a moldura suja. */}
-      <div className="relative grid aspect-square place-items-center bg-neutral-50 p-2">
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={!onOpen}
+        aria-label={`Abrir ${product.name}`}
+        className="relative grid aspect-square place-items-center bg-neutral-50 p-2 disabled:cursor-default"
+      >
         {product.imageUrl && !quebrada ? (
           <>
             {!carregada && <Skeleton className="absolute inset-0 rounded-none" />}
@@ -64,10 +85,17 @@ export function ProductCard({ product, onAdd, added }: { product: Product; onAdd
             {EMOJI[product.category] || '📦'}
           </span>
         )}
-      </div>
+      </button>
 
       <div className="flex flex-1 flex-col gap-1 px-2.5 pt-2.5">
-        <p className="line-clamp-2 min-h-[2.6em] text-[13px] leading-snug font-semibold tracking-tight">{product.name}</p>
+        <button
+          type="button"
+          onClick={onOpen}
+          disabled={!onOpen}
+          className="line-clamp-2 min-h-[2.6em] text-left text-[13px] leading-snug font-semibold tracking-tight hover:underline disabled:cursor-default disabled:no-underline"
+        >
+          {product.name}
+        </button>
         {product.brand && (
           <p className="text-muted-foreground/80 truncate text-[10.5px] font-semibold tracking-wider uppercase">
             {product.brand}
@@ -96,11 +124,24 @@ export function ProductCard({ product, onAdd, added }: { product: Product; onAdd
       </div>
 
       <div className="flex items-center gap-1.5 px-2.5 py-2">
-        <Button variant="outline" size="icon" className="size-8" onClick={() => setQty((q) => Math.max(1, q - 1))} disabled={qty <= 1} aria-label="Menos">
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-8"
+          onClick={() => setQty((q) => roundQty(Math.max(passo, q - passo)))}
+          disabled={qty <= passo}
+          aria-label="Menos"
+        >
           <Minus />
         </Button>
-        <span className="flex-1 text-center text-sm font-bold tabular-nums">{fmtQty(qty)}</span>
-        <Button variant="outline" size="icon" className="size-8" onClick={() => setQty((q) => q + 1)} aria-label="Mais">
+        <span className="flex-1 text-center text-sm font-bold tabular-nums">{fmtQty(qty, product.unit)}</span>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-8"
+          onClick={() => setQty((q) => roundQty(q + passo))}
+          aria-label="Mais"
+        >
           <Plus />
         </Button>
       </div>
@@ -108,8 +149,8 @@ export function ProductCard({ product, onAdd, added }: { product: Product; onAdd
       <Button
         className={`mx-2.5 mb-2.5 ${added ? 'bg-success text-success-foreground hover:bg-success animate-[pulso_0.4s_ease-out]' : ''}`}
         onClick={() => {
-          onAdd(qty);
-          setQty(1);
+          onAdd(qty, product.unit);
+          setQty(inicial);
         }}
       >
         {added ? <Check /> : <ShoppingCart />}

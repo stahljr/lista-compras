@@ -183,6 +183,9 @@ addColumn('list_items', 'price_snapshot', 'TEXT');
 addColumn('list_items', 'snapshot_at', 'TEXT');
 addColumn('lists', 'reusable', 'INTEGER NOT NULL DEFAULT 1');
 addColumn('trip_items', 'source_list_id', 'INTEGER');
+// Categoria corrigida a mao e decisao de quem usa: a reclassificacao
+// automatica do boot tem de respeitar e nao desfazer.
+addColumn('products', 'category_locked', 'INTEGER NOT NULL DEFAULT 0');
 
 // Nomes antigos: o "carrinho" era uma lista, antes de o carrinho passar a ser
 // a ida ao mercado montada a partir de uma ou mais listas.

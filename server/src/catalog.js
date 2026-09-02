@@ -127,6 +127,7 @@ export function hydrate(productId) {
     category: product.category,
     imageUrl: product.image_url,
     unit: product.unit,
+    categoryLocked: !!product.category_locked,
     offers,
     cheapest,
     marketsCount: withStock.length,
@@ -286,19 +287,51 @@ export function productsByCategory(category, { limit = 60, offset = 0 } = {}) {
  * As prateleiras da home: cada categoria com alguns produtos, numa consulta so.
  * Sem isso a tela inicial faria uma chamada por categoria.
  */
+/**
+ * Foto escolhida a mao para ilustrar o corredor. Guarda-se o produto, nao a
+ * URL: o mercado troca o arquivo da imagem de vez em quando, e o produto
+ * continua o mesmo.
+ */
+export function setCategoryCover(category, productId) {
+  if (productId == null) {
+    db.prepare('DELETE FROM meta WHERE key = ?').run(`cover:${category}`);
+    return null;
+  }
+  const product = q.productById.get(productId);
+  if (!product) return null;
+  metaSet(`cover:${category}`, String(productId));
+  return product.image_url;
+}
+
+function coverOf(category, products) {
+  const escolhido = metaGet(`cover:${category}`);
+  if (escolhido) {
+    const p = q.productById.get(Number(escolhido));
+    if (p?.image_url) return { url: p.image_url, escolhida: true };
+  }
+  // Sem escolha, a foto do primeiro produto do corredor que tenha uma.
+  return { url: products.find((p) => p.imageUrl)?.imageUrl || null, escolhida: false };
+}
+
 export function shelves({ perCategory = 10 } = {}) {
   const counts = new Map(categoryCounts().map((c) => [c.category, c.total]));
   // Todos os corredores aparecem, inclusive os que ainda nao tem produto: um
   // mercado tem o corredor de higiene mesmo quando a prateleira esta por
   // encher, e esconde-lo faz o app parecer quebrado. Vazio, ele se enche na
   // primeira vez que alguem entra.
-  return CATEGORIES.filter((c) => c.key !== 'outros' || counts.get(c.key)).map((c) => ({
-    key: c.key,
-    label: c.label,
-    emoji: c.emoji,
-    total: counts.get(c.key) || 0,
-    products: counts.get(c.key) ? productsByCategory(c.key, { limit: perCategory }) : [],
-  }));
+  return CATEGORIES.filter((c) => c.key !== 'outros' || counts.get(c.key)).map((c) => {
+    const products = counts.get(c.key) ? productsByCategory(c.key, { limit: perCategory }) : [];
+    const cover = coverOf(c.key, products);
+    return {
+      key: c.key,
+      label: c.label,
+      emoji: c.emoji,
+      total: counts.get(c.key) || 0,
+      coverUrl: cover.url,
+      coverChosen: cover.escolhida,
+      products,
+    };
+  });
 }
 
 /**
@@ -335,7 +368,8 @@ export function reclassifyAll() {
     .prepare(
       `SELECT p.id, p.name, p.category,
               (SELECT o.category FROM offers o WHERE o.product_id = p.id AND o.category IS NOT NULL LIMIT 1) AS raw
-         FROM products p`,
+         FROM products p
+        WHERE p.category_locked = 0`,
     )
     .all();
   const update = db.prepare('UPDATE products SET category = ? WHERE id = ?');
@@ -362,6 +396,18 @@ export function ensureClassifierFresh() {
 }
 
 /** Media e ultimo preco realmente pago, por item. Usado para estimar a compra. */
+/**
+ * Corrige a categoria de um produto a pedido de quem usa. Fica travada: o
+ * classificador automatico acerta na maioria, mas quando erra e a pessoa
+ * arruma, nao faz sentido a proxima versao das regras desfazer.
+ */
+export function setCategory(productId, category) {
+  const info = db
+    .prepare("UPDATE products SET category = ?, category_locked = 1, updated_at = datetime('now') WHERE id = ?")
+    .run(category, productId);
+  return info.changes > 0 ? hydrate(productId) : null;
+}
+
 export function priceStats(key) {
   return db
     .prepare(

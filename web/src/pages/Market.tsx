@@ -3,21 +3,31 @@ import { useNavigate } from 'react-router-dom';
 import { ClipboardList, Search, Store, TriangleAlert } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useStore } from '@/lib/store';
+import { quantity as fmtQty } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState, Page, SectionTitle, Topbar } from '@/components/Layout';
 import { ProductCard, ProductCardSkeleton } from '@/components/ProductCard';
+import { ProductDialog } from '@/components/ProductDialog';
 import { Shelf } from '@/components/Shelf';
 import type { Product, ShoppingList } from '@/lib/types';
 
-type Corredor = { key: string; label: string; emoji: string; total: number; products: Product[] };
+type Corredor = {
+  key: string;
+  label: string;
+  emoji: string;
+  total: number;
+  coverUrl: string | null;
+  coverChosen: boolean;
+  products: Product[];
+};
 type Busca = { products: Product[]; failed: { market: string; error: string }[] };
 
-/** Foto para ilustrar o corredor: a do primeiro produto que tiver uma. */
+/** A foto do corredor vem escolhida do servidor, com recurso automatico. */
 function capaDo(c: Corredor) {
-  return c.products.find((p) => p.imageUrl)?.imageUrl || null;
+  return c.coverUrl;
 }
 
 /** A placa do corredor: foto de um produto que esta nele, ou o emoji. */
@@ -77,6 +87,7 @@ export default function Market() {
   const [carregando, setCarregando] = useState(false);
   const [added, setAdded] = useState<Record<number, boolean>>({});
   const [erro, setErro] = useState('');
+  const [aberto2, setAberto2] = useState<Product | null>(null);
   const debounce = useRef<number | undefined>(undefined);
 
   const buscando = term.trim().length >= 2;
@@ -138,19 +149,23 @@ export default function Market() {
   }
 
   /** Com carrinho aberto o item vai direto pra ele; fora disso, para a lista. */
-  async function add(product: Product, qty = 1) {
+  async function add(product: Product, qty = 1, unit?: string) {
     setErro('');
+    // A unidade vem do cartao ou do dialogo (bandeja ou peso); sem ela o
+    // servidor usa a do mercado.
+    const corpo = { productId: product.id, qty, ...(unit ? { unit } : {}) };
     try {
       if (trip && trip.status === 'active') {
-        await api.post(`/trips/${trip.id}/items`, { productId: product.id, qty });
+        await api.post(`/trips/${trip.id}/items`, corpo);
         await refreshTrip();
       } else {
-        const { list } = await api.post<{ list: ShoppingList }>('/lists/geral/items', { productId: product.id, qty });
+        const { list } = await api.post<{ list: ShoppingList }>('/lists/geral/items', corpo);
         setGeneral(list);
       }
       setAdded((p) => ({ ...p, [product.id]: true }));
       window.setTimeout(() => setAdded((p) => ({ ...p, [product.id]: false })), 1400);
-      notify(`${qty > 1 ? `${qty}× ` : ''}${product.name} ${destino === 'carrinho' ? 'no carrinho' : 'na lista'}`, {
+      const medida = fmtQty(qty, unit || product.unit);
+      notify(`${medida === '1' ? '' : `${medida} `}${product.name} ${destino === 'carrinho' ? 'no carrinho' : 'na lista'}`, {
         texto: 'Ver',
         href: destino === 'carrinho' ? '/carrinho' : '/lista',
       });
@@ -237,7 +252,7 @@ export default function Market() {
             ) : (
               <div className={grade}>
                 {resultados.map((p) => (
-                  <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q) => void add(p, q)} />
+                  <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q, u) => void add(p, q, u)} onOpen={() => setAberto2(p)} />
                 ))}
               </div>
             )}
@@ -263,7 +278,7 @@ export default function Market() {
             ) : (
               <div className={grade}>
                 {doCorredor.map((p) => (
-                  <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q) => void add(p, q)} />
+                  <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q, u) => void add(p, q, u)} onOpen={() => setAberto2(p)} />
                 ))}
               </div>
             )}
@@ -306,13 +321,21 @@ export default function Market() {
                   </SectionTitle>
                   <Shelf>
                     {c.products.map((p) => (
-                      <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q) => void add(p, q)} />
+                      <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q, u) => void add(p, q, u)} onOpen={() => setAberto2(p)} />
                     ))}
                   </Shelf>
                 </div>
               ))
           ))}
       </Page>
+
+      <ProductDialog
+        product={aberto2}
+        open={!!aberto2}
+        onOpenChange={(v) => !v && setAberto2(null)}
+        onAdd={(prod, q, u) => void add(prod, q, u)}
+        onCoverChange={() => void recarregarCorredores()}
+      />
     </>
   );
 }

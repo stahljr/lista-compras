@@ -150,14 +150,18 @@ listsRouter.post('/:id/items', (req, res, next) => {
       if (!product) return res.status(404).json({ error: 'produto nao encontrado' });
       name = name || product.name;
       category = product.category;
-      unit = product.unit;
       imageUrl = product.imageUrl;
+      // A unidade do produto e o padrao, mas nao a lei: carne moida se compra
+      // por bandeja ou por peso, e quem decide isso e quem vai comprar.
+      unit = body.unit ? String(body.unit) : product.unit;
     }
     if (!name) return res.status(400).json({ error: 'informe o item' });
 
-    // Item repetido soma na quantidade em vez de duplicar a linha.
+    // Item repetido soma na quantidade em vez de duplicar a linha -- mas a
+    // unidade entra na conta: "1 bandeja" e "1,5 kg" do mesmo produto sao duas
+    // compras diferentes e nao podem virar "2,5" de coisa nenhuma.
     const existing = productId
-      ? db.prepare('SELECT * FROM list_items WHERE list_id = ? AND product_id = ?').get(list.id, productId)
+      ? db.prepare('SELECT * FROM list_items WHERE list_id = ? AND product_id = ? AND unit = ?').get(list.id, productId, unit)
       : db.prepare('SELECT * FROM list_items WHERE list_id = ? AND product_id IS NULL AND lower(name) = lower(?)').get(list.id, name);
 
     if (existing) {

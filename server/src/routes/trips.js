@@ -303,8 +303,8 @@ tripsRouter.post('/:id/items', (req, res, next) => {
       if (!product) return res.status(404).json({ error: 'produto nao encontrado' });
       name = name || product.name;
       category = product.category;
-      unit = product.unit;
       imageUrl = product.imageUrl;
+      unit = body.unit ? String(body.unit) : product.unit;
       expected = (trip.market ? product.offers.find((o) => o.market === trip.market)?.price : null) ?? product.cheapest?.price ?? null;
     }
     if (!name) return res.status(400).json({ error: 'informe o item' });

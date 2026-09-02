@@ -23,6 +23,8 @@ export type Product = {
   offers: Offer[];
   cheapest: Offer | null;
   marketsCount: number;
+  /** Categoria escolhida à mão: a reclassificação automática não mexe. */
+  categoryLocked?: boolean;
 };
 
 export type Person = { id: number; name: string; color: string };

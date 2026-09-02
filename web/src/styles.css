@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
 
 /* O shadcn/ui usa a classe .dark, nao a media query: e assim que os
    utilitarios "dark:" dos componentes colados de fora funcionam. Quem coloca a

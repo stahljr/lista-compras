@@ -1,7 +1,8 @@
 import express from 'express';
-import { unifiedSearch, categoryCounts, productsByCategory, shelves, fillCategory, hydrate, fillMissingOffers, priceStats } from '../catalog.js';
-import { CATEGORIES } from '../categories.js';
+import { unifiedSearch, categoryCounts, productsByCategory, shelves, fillCategory, setCategory, setCategoryCover, hydrate, fillMissingOffers, priceStats } from '../catalog.js';
+import { CATEGORIES, CATEGORY_BY_KEY } from '../categories.js';
 import { marketInfo } from '../markets/index.js';
+import { requireAuth } from '../auth.js';
 
 export const catalogRouter = express.Router();
 
@@ -50,6 +51,25 @@ catalogRouter.get('/categories/:key', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+/** Escolhe (ou solta) a foto que ilustra o corredor. */
+catalogRouter.patch('/categories/:key/cover', requireAuth, (req, res) => {
+  const key = req.params.key;
+  if (!CATEGORY_BY_KEY.has(key)) return res.status(400).json({ error: 'categoria desconhecida' });
+  const productId = req.body?.productId == null ? null : Number(req.body.productId);
+  const url = setCategoryCover(key, productId);
+  if (productId != null && !url) return res.status(404).json({ error: 'produto nao encontrado' });
+  res.json({ coverUrl: url, coverChosen: productId != null });
+});
+
+/** Corrige a categoria de um produto (e trava contra a reclassificacao). */
+catalogRouter.patch('/products/:id/category', requireAuth, (req, res) => {
+  const category = String(req.body?.category || '');
+  if (!CATEGORY_BY_KEY.has(category)) return res.status(400).json({ error: 'categoria desconhecida' });
+  const product = setCategory(Number(req.params.id), category);
+  if (!product) return res.status(404).json({ error: 'produto nao encontrado' });
+  res.json({ product });
 });
 
 catalogRouter.get('/products/:id', async (req, res, next) => {
