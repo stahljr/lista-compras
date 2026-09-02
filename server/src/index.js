@@ -6,6 +6,7 @@ import { authRouter } from './routes/auth.js';
 import { catalogRouter } from './routes/catalog.js';
 import { listsRouter } from './routes/lists.js';
 import { tripsRouter } from './routes/trips.js';
+import { backupRouter } from './routes/backup.js';
 import { subscribe } from './realtime.js';
 import { startRefresher } from './refresher.js';
 import { ensureClassifierFresh } from './catalog.js';
@@ -16,7 +17,11 @@ const PORT = Number(process.env.PORT || 3000);
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '256kb' }));
+// Um pedido normal e pequeno; so a restauracao do backup traz a casa inteira
+// de uma vez, e por isso tem um limite proprio.
+const corpoJson = express.json({ limit: '256kb' });
+const corpoGrande = express.json({ limit: '8mb' });
+app.use((req, res, next) => (req.path === '/api/backup/restore' ? corpoGrande : corpoJson)(req, res, next));
 app.use(attachUser);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
@@ -24,6 +29,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/catalog', catalogRouter);
 app.use('/api/lists', listsRouter);
 app.use('/api/trips', tripsRouter);
+app.use('/api/backup', backupRouter);
 
 /** Canal de sync: o outro celular avisa quando mexe no carrinho ou na compra. */
 app.get('/api/events', requireAuth, (req, res) => subscribe(req, res, req.user.householdId));

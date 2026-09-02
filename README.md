@@ -137,6 +137,53 @@ não mandam `Access-Control-Allow-Origin`, então o navegador **bloqueia** a
 chamada direta a eles. Hoje quem consulta os mercados é o servidor, onde CORS
 não existe. Do navegador, só o Condor responderia.
 
+### Render — publica pelo site, e o disco é o que importa
+
+O Render publica direto do GitHub, sem terminal: ele lê o `render.yaml` que está
+na raiz do projeto.
+
+1. https://dashboard.render.com → **New** → **Blueprint**.
+2. Autorize o GitHub e escolha o repositório `lista-compras`.
+3. Aparece o serviço `lista-compras`, já com o disco em `/data`. Preencha
+   **INVITE_CODE** com o código que a segunda pessoa vai digitar para entrar.
+4. **Apply**. O primeiro build leva alguns minutos — é o `better-sqlite3` sendo
+   compilado.
+5. O endereço sai como `https://lista-compras-xxxx.onrender.com`.
+
+Feito isso, cada `git push` neste branch republica sozinho.
+
+**O detalhe que custa dados:** disco, no Render, só existe em plano pago
+(Starter; o 1 GB do blueprint custa centavos em cima). No plano **free** o
+sistema de arquivos é efêmero — o banco é recriado vazio a cada deploy e a cada
+vez que o serviço acorda de dormir. É isso que apaga a lista, e não um bug do
+app. Duas saídas honestas:
+
+- **Starter + disco:** a lista fica, e o serviço não dorme — some também a
+  espera de quase um minuto na primeira tela.
+- **Continuar no free:** dá para usar sabendo que é volátil. O catálogo se
+  reconstrói sozinho (ele vem dos mercados); o que se perde é conta e lista.
+  Antes de cada deploy, Perfil → **Baixar backup**; depois, **Restaurar
+  backup**.
+
+Se o serviço já existe, criado à mão sem blueprint: o disco se acrescenta em
+**Settings → Disks → Add Disk** (`Mount Path: /data`, 1 GB), e o
+**DATA_DIR = /data** em **Settings → Environment**. Trocar free por Starter é
+ali mesmo, em **Instance Type**.
+
+### Guardar e devolver os dados
+
+Independente de onde o app rode, dá para levar as listas embora:
+
+- **Perfil → Baixar backup** salva um `.json` com as listas, os itens (com o
+  preço congelado) e o histórico de preços pagos.
+- **Perfil → Restaurar backup** devolve esse arquivo para dentro do app. Ele
+  **acrescenta**: item que já existe fica como está, lista rápida de mesmo nome
+  recebe só o que falta. Restaurar duas vezes por engano não duplica nada.
+
+O arquivo não guarda id de produto, e por isso funciona entre instalações
+diferentes: cada item viaja com o EAN (ou o nome normalizado), e a restauração
+o liga de novo ao produto do catálogo local quando ele existe por lá.
+
 ### Fly.io — uma máquina com volume
 
 A Fly não tem deploy pelo site: o painel mostra o app, os logs, o volume e os
@@ -319,10 +366,11 @@ instala como PWA e não funciona offline** — o que anula metade da ideia.
 
 ### Hospedagens sem disco persistente
 
-Planos gratuitos que não oferecem disco (o free tier do Render é o caso mais
-comum) não servem para este app: o SQLite é um arquivo, e sem disco a lista se
-perde a cada reinício. Além disso, esses planos costumam derrubar o serviço
-quando ele fica ocioso, e a volta demora bem mais que a suspensão do Fly.
+Plano gratuito sem disco (o free do Render é o caso mais comum) roda o app, mas
+não guarda nada: o SQLite é um arquivo, e sem disco ele volta vazio a cada
+reinício. Esses planos também derrubam o serviço quando ele fica ocioso, e a
+volta demora bem mais que a suspensão do Fly. Se for o seu caso, o backup do
+Perfil deixa de ser luxo e passa a ser a rotina antes de cada deploy.
 
 ### Instalando no celular
 

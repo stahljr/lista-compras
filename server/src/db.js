@@ -186,6 +186,10 @@ addColumn('trip_items', 'source_list_id', 'INTEGER');
 // Categoria corrigida a mao e decisao de quem usa: a reclassificacao
 // automatica do boot tem de respeitar e nao desfazer.
 addColumn('products', 'category_locked', 'INTEGER NOT NULL DEFAULT 0');
+// Mercado escolhido para aquele item -- "este eu quero no Muffato". Vazio
+// significa "onde estiver mais barato", que continua sendo o padrao.
+addColumn('list_items', 'market', 'TEXT');
+addColumn('trip_items', 'market', 'TEXT');
 
 // Nomes antigos: o "carrinho" era uma lista, antes de o carrinho passar a ser
 // a ida ao mercado montada a partir de uma ou mais listas.
