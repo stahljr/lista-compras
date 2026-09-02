@@ -1,21 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 /**
  * Prateleira que rola na horizontal, com setas. Sem elas nao fica claro que ha
- * mais produto do lado -- num toque a faixa parece terminar onde a tela
- * termina.
+ * mais produto do lado -- a faixa parece terminar onde a tela termina. No
+ * toque as setas somem, porque ali se rola com o dedo.
  */
 export function Shelf({ children }: { children: ReactNode }) {
   const trilha = useRef<HTMLDivElement>(null);
-  const [temAntes, setTemAntes] = useState(false);
-  const [temDepois, setTemDepois] = useState(false);
+  const [antes, setAntes] = useState(false);
+  const [depois, setDepois] = useState(false);
 
   const medir = useCallback(() => {
     const el = trilha.current;
     if (!el) return;
-    setTemAntes(el.scrollLeft > 8);
-    setTemDepois(el.scrollLeft + el.clientWidth < el.scrollWidth - 8);
+    setAntes(el.scrollLeft > 8);
+    setDepois(el.scrollLeft + el.clientWidth < el.scrollWidth - 8);
   }, []);
 
   useEffect(() => {
@@ -31,26 +33,28 @@ export function Shelf({ children }: { children: ReactNode }) {
   }, [medir]);
 
   function rolar(direcao: -1 | 1) {
-    const el = trilha.current;
-    if (!el) return;
-    // Rola quase uma tela cheia, deixando um cartao a vista como referencia.
-    el.scrollBy({ left: direcao * (el.clientWidth * 0.85), behavior: 'smooth' });
+    trilha.current?.scrollBy({ left: direcao * (trilha.current.clientWidth * 0.85), behavior: 'smooth' });
   }
 
+  const seta = 'absolute top-[36%] z-10 hidden size-9 rounded-full shadow-lg [@media(hover:hover)]:flex';
+
   return (
-    <div className="prateleira-wrap">
-      {temAntes && (
-        <button className="prateleira-seta esquerda" onClick={() => rolar(-1)} aria-label="Voltar">
-          ‹
-        </button>
+    <div className="relative">
+      {antes && (
+        <Button variant="outline" size="icon" className={`${seta} -left-2`} onClick={() => rolar(-1)} aria-label="Voltar">
+          <ChevronLeft />
+        </Button>
       )}
-      <div className="prateleira" ref={trilha}>
+      <div
+        ref={trilha}
+        className="grid snap-x snap-proximity auto-cols-[9.5rem] grid-flow-col gap-2.5 overflow-x-auto pb-1.5 [scrollbar-width:none] md:auto-cols-[12rem] md:gap-4 [&::-webkit-scrollbar]:hidden [&>*]:snap-start"
+      >
         {children}
       </div>
-      {temDepois && (
-        <button className="prateleira-seta direita" onClick={() => rolar(1)} aria-label="Avançar">
-          ›
-        </button>
+      {depois && (
+        <Button variant="outline" size="icon" className={`${seta} -right-2`} onClick={() => rolar(1)} aria-label="Avançar">
+          <ChevronRight />
+        </Button>
       )}
     </div>
   );

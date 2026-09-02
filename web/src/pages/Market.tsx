@@ -1,128 +1,145 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
-import { useStore } from '../lib/store';
-import { ProductCard, ProductCardSkeleton } from '../components/ProductCard';
-import { Shelf } from '../components/Shelf';
-import type { Product, ShoppingList } from '../lib/types';
+import { ClipboardList, Search, Store, TriangleAlert } from 'lucide-react';
+import { api } from '@/lib/api';
+import { useStore } from '@/lib/store';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState, Page, SectionTitle, Topbar } from '@/components/Layout';
+import { ProductCard, ProductCardSkeleton } from '@/components/ProductCard';
+import { Shelf } from '@/components/Shelf';
+import type { Product, ShoppingList } from '@/lib/types';
 
-type Shelf = { key: string; label: string; emoji: string; total: number; products: Product[] };
+type Corredor = { key: string; label: string; emoji: string; total: number; products: Product[] };
+type Busca = { products: Product[]; failed: { market: string; error: string }[] };
 
 /** Foto para ilustrar o corredor: a do primeiro produto que tiver uma. */
-function capaDo(shelf: Shelf) {
-  return shelf.products.find((p) => p.imageUrl)?.imageUrl || null;
+function capaDo(c: Corredor) {
+  return c.products.find((p) => p.imageUrl)?.imageUrl || null;
 }
 
-/** Capa do corredor, com shimmer enquanto a foto nao chega. */
-function CorredorCapa({ src, emoji }: { src: string | null; emoji: string }) {
+/** A placa do corredor: foto de um produto que esta nele, ou o emoji. */
+function CorredorTile({ c, ativo, onClick }: { c: Corredor; ativo: boolean; onClick: () => void }) {
   const [carregada, setCarregada] = useState(false);
   const [quebrada, setQuebrada] = useState(false);
-  if (!src || quebrada) {
-    return (
-      <span className="capa">
-        <span className="ico" aria-hidden="true">
-          {emoji}
-        </span>
-      </span>
-    );
-  }
+  const capa = capaDo(c);
   return (
-    <span className="capa">
-      {!carregada && <span className="skeleton" aria-hidden="true" />}
-      <img
-        className={carregada ? 'carregada' : undefined}
-        src={src}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        onLoad={() => setCarregada(true)}
-        onError={() => setQuebrada(true)}
-      />
-    </span>
+    <button onClick={onClick} className="group flex snap-start flex-col items-center gap-1.5">
+      <span
+        className={cn(
+          'relative grid size-[5.75rem] place-items-center overflow-hidden rounded-2xl border bg-neutral-50 shadow-sm transition-all md:size-28',
+          ativo ? 'border-primary ring-primary/30 ring-2' : 'group-hover:border-primary/50',
+        )}
+      >
+        {capa && !quebrada ? (
+          <>
+            {!carregada && <Skeleton className="absolute inset-0 rounded-none" />}
+            <img
+              src={capa}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              onLoad={() => setCarregada(true)}
+              onError={() => setQuebrada(true)}
+              className={cn('relative size-full object-contain p-2 transition-opacity duration-300', carregada ? 'opacity-100' : 'opacity-0')}
+            />
+          </>
+        ) : (
+          <span className="text-3xl" aria-hidden="true">
+            {c.emoji}
+          </span>
+        )}
+      </span>
+      <span className="w-[5.75rem] text-center text-xs leading-tight font-semibold tracking-tight md:w-28 md:text-[12.5px]">
+        {c.label}
+      </span>
+    </button>
   );
 }
-type SearchResponse = { products: Product[]; failed: { market: string; error: string }[] };
 
 /**
- * A tela inicial: o mercado. Sem busca, mostra as prateleiras por categoria --
- * limpeza, higiene, bazar -- para dar para escolher olhando, como numa loja.
- * Com busca, os quatro mercados de uma vez.
+ * A tela inicial: o mercado. Sem busca, mostra os corredores e as prateleiras
+ * por categoria -- da para escolher olhando, como numa loja. Com busca, os
+ * quatro mercados de uma vez.
  */
 export default function Market() {
   const { setGeneral, general, trip, refreshTrip, notify } = useStore();
   const navigate = useNavigate();
   const [term, setTerm] = useState('');
-  const [shelves, setShelves] = useState<Shelf[]>([]);
-  const [carregandoShelves, setCarregandoShelves] = useState(true);
-  const [results, setResults] = useState<Product[]>([]);
-  const [failed, setFailed] = useState<{ market: string; error: string }[]>([]);
-  const [category, setCategory] = useState<string | null>(null);
-  const [categoryProducts, setCategoryProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [corredores, setCorredores] = useState<Corredor[]>([]);
+  const [carregandoCorredores, setCarregandoCorredores] = useState(true);
+  const [resultados, setResultados] = useState<Product[]>([]);
+  const [falhas, setFalhas] = useState<{ market: string; error: string }[]>([]);
+  const [aberto, setAberto] = useState<string | null>(null);
+  const [doCorredor, setDoCorredor] = useState<Product[]>([]);
+  const [carregando, setCarregando] = useState(false);
   const [added, setAdded] = useState<Record<number, boolean>>({});
-  const [error, setError] = useState('');
+  const [erro, setErro] = useState('');
   const debounce = useRef<number | undefined>(undefined);
 
   const buscando = term.trim().length >= 2;
   const naLista = general?.items.length ?? 0;
   const destino = trip && trip.status === 'active' ? 'carrinho' : 'lista';
 
-  useEffect(() => {
-    void api
-      .get<{ shelves: Shelf[] }>('/catalog/shelves?perCategory=12')
-      .then((d) => setShelves(d.shelves))
-      .catch(() => {})
-      .finally(() => setCarregandoShelves(false));
-  }, []);
+  const recarregarCorredores = useCallback(
+    () =>
+      api
+        .get<{ shelves: Corredor[] }>('/catalog/shelves?perCategory=12')
+        .then((d) => setCorredores(d.shelves))
+        .catch(() => {}),
+    [],
+  );
 
-  const runSearch = useCallback(async (query: string) => {
-    if (query.trim().length < 2) {
-      setResults([]);
-      setFailed([]);
+  useEffect(() => {
+    void recarregarCorredores().finally(() => setCarregandoCorredores(false));
+  }, [recarregarCorredores]);
+
+  const buscar = useCallback(async (q: string) => {
+    if (q.trim().length < 2) {
+      setResultados([]);
+      setFalhas([]);
       return;
     }
-    setLoading(true);
-    setError('');
+    setCarregando(true);
+    setErro('');
     try {
-      const data = await api.get<SearchResponse>(`/catalog/search?q=${encodeURIComponent(query)}&limit=40`);
-      setResults(data.products);
-      setFailed(data.failed || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'a busca falhou');
+      const d = await api.get<Busca>(`/catalog/search?q=${encodeURIComponent(q)}&limit=40`);
+      setResultados(d.products);
+      setFalhas(d.failed || []);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'a busca falhou');
     } finally {
-      setLoading(false);
+      setCarregando(false);
     }
   }, []);
 
   useEffect(() => {
     window.clearTimeout(debounce.current);
-    debounce.current = window.setTimeout(() => void runSearch(term), 450);
+    debounce.current = window.setTimeout(() => void buscar(term), 450);
     return () => window.clearTimeout(debounce.current);
-  }, [term, runSearch]);
+  }, [term, buscar]);
 
-  async function openCategory(key: string) {
-    setCategory(key);
+  async function abrirCorredor(key: string) {
+    setAberto(key);
     setTerm('');
-    setCategoryProducts([]);
-    setLoading(true);
+    setDoCorredor([]);
+    setCarregando(true);
     try {
-      // O servidor enche o corredor buscando nos mercados quando ele ainda
-      // esta vazio, entao esta chamada pode levar alguns segundos.
+      // O servidor enche o corredor buscando nos mercados quando ainda esta
+      // vazio, entao esta chamada pode levar alguns segundos.
       const d = await api.get<{ products: Product[] }>(`/catalog/categories/${key}?limit=60`);
-      setCategoryProducts(d.products);
-      // O que veio pode ter mudado as contagens dos corredores.
-      void api
-        .get<{ shelves: Shelf[] }>('/catalog/shelves?perCategory=12')
-        .then((r) => setShelves(r.shelves))
-        .catch(() => {});
+      setDoCorredor(d.products);
+      void recarregarCorredores();
     } finally {
-      setLoading(false);
+      setCarregando(false);
     }
   }
 
   /** Com carrinho aberto o item vai direto pra ele; fora disso, para a lista. */
   async function add(product: Product, qty = 1) {
-    setError('');
+    setErro('');
     try {
       if (trip && trip.status === 'active') {
         await api.post(`/trips/${trip.id}/items`, { productId: product.id, qty });
@@ -133,183 +150,169 @@ export default function Market() {
       }
       setAdded((p) => ({ ...p, [product.id]: true }));
       window.setTimeout(() => setAdded((p) => ({ ...p, [product.id]: false })), 1400);
-      const onde = destino === 'carrinho' ? 'no carrinho' : 'na lista';
-      notify(`${qty > 1 ? `${qty}× ` : ''}${product.name} ${onde}`, {
+      notify(`${qty > 1 ? `${qty}× ` : ''}${product.name} ${destino === 'carrinho' ? 'no carrinho' : 'na lista'}`, {
         texto: 'Ver',
         href: destino === 'carrinho' ? '/carrinho' : '/lista',
       });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'não deu para adicionar');
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'não deu para adicionar');
     }
   }
 
+  const grade = 'grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:gap-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6';
+  const corredorAberto = corredores.find((c) => c.key === aberto);
+
   return (
     <>
-      <header className="topbar">
-        <div className="grow">
-          <h1>Mercado</h1>
-          <p className="sub">
-            {destino === 'carrinho' ? 'adicionando no carrinho em andamento' : 'preço nos quatro mercados'}
-          </p>
-        </div>
+      <Topbar
+        title="Mercado"
+        subtitle={destino === 'carrinho' ? 'adicionando no carrinho em andamento' : 'preço nos quatro mercados'}
+      >
         {naLista > 0 && destino === 'lista' && (
-          <button className="btn btn-sm" onClick={() => navigate('/lista')}>
-            📝 {naLista}
-          </button>
+          <Button variant="outline" size="sm" onClick={() => navigate('/lista')}>
+            <ClipboardList />
+            {naLista}
+          </Button>
         )}
-      </header>
+      </Topbar>
 
-      <main className="page">
-        <div className="searchbar busca-mercado" style={{ marginBottom: 12 }}>
-          <span className="lupa" aria-hidden="true">
-            🔍
-          </span>
-          <input
-            className="input"
+      <Page>
+        <div className="relative">
+          <Search className="text-muted-foreground/70 pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2" />
+          <Input
+            className="h-12 pl-10.5 text-base"
             placeholder="Buscar produto: arroz, detergente, café…"
             value={term}
             onChange={(e) => {
               setTerm(e.target.value);
-              setCategory(null);
+              setAberto(null);
             }}
             enterKeyHint="search"
             autoComplete="off"
           />
-          {loading && <div className="spinner" />}
+          {carregando && (
+            <div className="border-muted border-t-primary absolute top-1/2 right-4 size-4 -translate-y-1/2 animate-spin rounded-full border-2" />
+          )}
         </div>
 
-        {shelves.length > 0 && !buscando && (
+        {!buscando && corredores.length > 0 && (
           <>
-            <div className="section-title">Corredores</div>
-            <div className="corredores" style={{ marginBottom: 4 }}>
-              {shelves.map((c) => (
-                <button
+            <SectionTitle>Corredores</SectionTitle>
+            <div className="grid snap-x auto-cols-max grid-flow-col gap-3 overflow-x-auto pb-2 [scrollbar-width:none] md:gap-4 [&::-webkit-scrollbar]:hidden">
+              {corredores.map((c) => (
+                <CorredorTile
                   key={c.key}
-                  className={`corredor${category === c.key ? ' on' : ''}`}
-                  onClick={() => {
-                    if (category === c.key) {
-                      setCategory(null);
-                      setCategoryProducts([]);
-                    } else void openCategory(c.key);
-                  }}
-                >
-                  {/* A capa do corredor e a foto de um produto que esta nele
-                      -- nao ha arte propria, e um produto real ilustra bem. */}
-                  <CorredorCapa src={capaDo(c)} emoji={c.emoji} />
-                  <span className="nome">{c.label}</span>
-                </button>
+                  c={c}
+                  ativo={aberto === c.key}
+                  onClick={() => (aberto === c.key ? (setAberto(null), setDoCorredor([])) : void abrirCorredor(c.key))}
+                />
               ))}
             </div>
           </>
         )}
 
-        {error && (
-          <div className="banner danger">
-            <span>⚠️</span>
-            <span>{error}</span>
+        {erro && (
+          <div className="bg-destructive/10 text-destructive mt-3 flex items-center gap-2 rounded-lg px-3.5 py-2.5 text-sm font-medium">
+            <TriangleAlert className="size-4 shrink-0" />
+            {erro}
           </div>
         )}
 
-        {failed.length > 0 && (
-          <div className="banner warn">
-            <span>⚠️</span>
-            <span>Não deu para consultar {failed.map((f) => f.market).join(', ')} agora. Os outros estão aí.</span>
+        {falhas.length > 0 && (
+          <div className="bg-accent/20 text-accent-foreground mt-3 flex items-center gap-2 rounded-lg px-3.5 py-2.5 text-sm font-medium">
+            <TriangleAlert className="size-4 shrink-0" />
+            Não deu para consultar {falhas.map((f) => f.market).join(', ')} agora. Os outros estão aí.
           </div>
         )}
 
-        {/* busca */}
         {buscando && (
           <>
-            <div className="section-title">
-              <span>Resultados</span>
-              <span className="count right">{results.length}</span>
-            </div>
-            {results.length === 0 && !loading ? (
-              <div className="empty">
-                <div className="ico">🔍</div>
-                <h3>Nada encontrado</h3>
-                <p>Tente escrever de outro jeito, ou anote à mão na lista.</p>
-              </div>
+            <SectionTitle action={<span className="text-muted-foreground text-sm">{resultados.length}</span>}>
+              Resultados
+            </SectionTitle>
+            {!resultados.length && !carregando ? (
+              <EmptyState icon={<Search />} title="Nada encontrado">
+                Tente escrever de outro jeito, ou anote à mão na lista.
+              </EmptyState>
             ) : (
-              <div className="produtos">
-                {results.map((p) => (
-                  <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(qty) => void add(p, qty)} />
+              <div className={grade}>
+                {resultados.map((p) => (
+                  <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q) => void add(p, q)} />
                 ))}
               </div>
             )}
           </>
         )}
 
-        {/* categoria aberta */}
-        {!buscando && category && (
+        {!buscando && aberto && (
           <>
-            <div className="section-title">
-              <span>{shelves.find((c) => c.key === category)?.label}</span>
-              <span className="count right">{categoryProducts.length}</span>
-            </div>
-            {loading && !categoryProducts.length ? (
-              <div className="empty">
-                <div className="spinner" style={{ margin: '0 auto 12px' }} />
-                <h3>Enchendo a prateleira</h3>
-                <p>Buscando este corredor nos quatro mercados — leva alguns segundos na primeira vez.</p>
-              </div>
-            ) : (
-              <div className="produtos">
-                {categoryProducts.map((p) => (
-                  <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(qty) => void add(p, qty)} />
-                ))}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* prateleiras */}
-        {!buscando && !category && (
-          <>
-            {carregandoShelves && shelves.length === 0 ? (
+            <SectionTitle action={<span className="text-muted-foreground text-sm">{doCorredor.length}</span>}>
+              {corredorAberto?.label}
+            </SectionTitle>
+            {carregando && !doCorredor.length ? (
               <>
-                {['a', 'b'].map((k) => (
-                  <div key={k}>
-                    <div className="section-title">
-                      <span className="linha-falsa skeleton" style={{ width: 150, height: 18, display: 'block' }} />
-                    </div>
-                    <div className="prateleira">
-                      {[0, 1, 2, 3, 4, 5].map((i) => (
-                        <ProductCardSkeleton key={i} />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </>
-            ) : shelves.length === 0 ? (
-              <div className="empty">
-                <div className="ico">🏪</div>
-                <h3>Catálogo vazio</h3>
-                <p>
-                  Busque um produto acima para o app trazer dos mercados — ou rode <code>npm run seed</code> no servidor
-                  para já começar com as prateleiras cheias.
+                <p className="text-muted-foreground mb-4 text-sm">
+                  Enchendo a prateleira: buscando este corredor nos quatro mercados.
                 </p>
-              </div>
+                <div className={grade}>
+                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                    <ProductCardSkeleton key={i} />
+                  ))}
+                </div>
+              </>
             ) : (
-              shelves.filter((s) => s.products.length).map((shelf) => (
-                <div key={shelf.key}>
-                  <div className="section-title">
-                    <span>{shelf.label}</span>
-                    <button className="btn btn-ghost btn-sm right" onClick={() => void openCategory(shelf.key)}>
-                      ver {shelf.total} →
-                    </button>
-                  </div>
+              <div className={grade}>
+                {doCorredor.map((p) => (
+                  <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q) => void add(p, q)} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {!buscando &&
+          !aberto &&
+          (carregandoCorredores && !corredores.length ? (
+            ['a', 'b'].map((k) => (
+              <div key={k}>
+                <SectionTitle>
+                  <Skeleton className="h-5 w-36" />
+                </SectionTitle>
+                <div className="grid auto-cols-[9.5rem] grid-flow-col gap-2.5 overflow-hidden md:auto-cols-[12rem] md:gap-4">
+                  {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                    <ProductCardSkeleton key={i} />
+                  ))}
+                </div>
+              </div>
+            ))
+          ) : !corredores.length ? (
+            <EmptyState icon={<Store />} title="Catálogo vazio">
+              Busque um produto acima para o app trazer dos mercados — ou rode <code>npm run seed</code> no servidor para
+              já começar com as prateleiras cheias.
+            </EmptyState>
+          ) : (
+            corredores
+              .filter((c) => c.products.length)
+              .map((c) => (
+                <div key={c.key}>
+                  <SectionTitle
+                    action={
+                      <Button variant="ghost" size="sm" onClick={() => void abrirCorredor(c.key)}>
+                        ver {c.total} →
+                      </Button>
+                    }
+                  >
+                    {c.label}
+                  </SectionTitle>
                   <Shelf>
-                    {shelf.products.map((p) => (
-                      <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(qty) => void add(p, qty)} />
+                    {c.products.map((p) => (
+                      <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q) => void add(p, q)} />
                     ))}
                   </Shelf>
                 </div>
               ))
-            )}
-          </>
-        )}
-      </main>
+          ))}
+      </Page>
     </>
   );
 }

@@ -1,69 +1,152 @@
+@import 'tailwindcss';
+
+/* O shadcn/ui usa a classe .dark, nao a media query: e assim que os
+   utilitarios "dark:" dos componentes colados de fora funcionam. Quem coloca a
+   classe e o script no index.html, antes da pintura. */
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------- tokens
+   Nomes na convencao do shadcn (background, foreground, card, primary...),
+   com os valores da nossa paleta: verde-mata com acento de limao, fundo
+   levemente quente no claro e carvao quente no escuro. Componente colado de
+   fora ja nasce com a nossa cara, sem editar cor nenhuma. */
 :root {
-  /* Verde-mata profundo com um acento de limao: o verde generico de "app de
-     mercado" e o do botao do Whatsapp; este puxa para a horta e deixa o
-     amarelo servir de destaque de preco. */
-  --brand: #12674b;
-  --brand-strong: #0d4f39;
-  --brand-soft: #e3f3ea;
-  --brand-ink: #0d4f39;
-  --accent: #f2b21c;
+  --radius: 0.9rem;
 
-  /* Fundo levemente quente, nao o cinza-azulado padrao. */
-  --bg: #f6f4f0;
-  --surface: #ffffff;
-  --surface-2: #f3f1ec;
-  --border: #e4e0d8;
-  --text: #1b1a17;
-  --muted: #6a6459;
-  --faint: #9b9488;
+  --background: oklch(0.968 0.006 85);
+  --foreground: oklch(0.19 0.008 60);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.19 0.008 60);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.19 0.008 60);
 
-  --danger: #b8342a;
-  --danger-soft: #fbe7e4;
-  --ok: #12674b;
-  --ok-soft: #e3f3ea;
-  --warn: #8a5a10;
-  --warn-soft: #fdf1d8;
-  --sale: #c62f22;
+  --primary: oklch(0.44 0.093 163);
+  --primary-foreground: oklch(0.99 0.003 85);
+  --secondary: oklch(0.945 0.008 85);
+  --secondary-foreground: oklch(0.28 0.01 60);
+  --muted: oklch(0.945 0.008 85);
+  --muted-foreground: oklch(0.5 0.013 65);
+  --accent: oklch(0.79 0.14 82);
+  --accent-foreground: oklch(0.22 0.03 70);
 
-  /* Sombra em duas camadas: uma rente ao objeto, outra difusa. Uma sombra so
-     achata tudo no mesmo plano. */
-  --shadow: 0 1px 2px rgba(27, 26, 23, 0.05), 0 10px 26px -18px rgba(27, 26, 23, 0.22);
-  --shadow-forte: 0 2px 4px rgba(27, 26, 23, 0.07), 0 18px 40px -22px rgba(27, 26, 23, 0.3);
-  --radius: 16px;
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  color-scheme: light;
+  --destructive: oklch(0.51 0.16 27);
+  --destructive-foreground: oklch(0.99 0.003 85);
+  --success: oklch(0.44 0.093 163);
+  --success-foreground: oklch(0.99 0.003 85);
+  --sale: oklch(0.52 0.19 26);
+
+  --border: oklch(0.9 0.009 82);
+  --input: oklch(0.9 0.009 82);
+  --ring: oklch(0.44 0.093 163);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    /* Escuro quente, quase carvao -- o azul-marinho padrao e o que da o ar de
-       painel de admin. O verde clareia para manter contraste sobre ele. */
-    --brand: #4cc38a;
-    --brand-strong: #6ad3a1;
-    --brand-soft: #172b22;
-    --brand-ink: #a7e8c6;
-    --accent: #f5c250;
+.dark {
+  --background: oklch(0.17 0.009 75);
+  --foreground: oklch(0.95 0.012 85);
+  --card: oklch(0.215 0.011 75);
+  --card-foreground: oklch(0.95 0.012 85);
+  --popover: oklch(0.215 0.011 75);
+  --popover-foreground: oklch(0.95 0.012 85);
 
-    --bg: #16150f;
-    --surface: #201e17;
-    --surface-2: #2a271e;
-    --border: #38342a;
-    --text: #f3efe4;
-    --muted: #a8a191;
-    --faint: #7d7768;
+  --primary: oklch(0.75 0.13 162);
+  --primary-foreground: oklch(0.19 0.02 160);
+  --secondary: oklch(0.265 0.013 75);
+  --secondary-foreground: oklch(0.95 0.012 85);
+  --muted: oklch(0.265 0.013 75);
+  --muted-foreground: oklch(0.69 0.014 80);
+  --accent: oklch(0.82 0.13 84);
+  --accent-foreground: oklch(0.2 0.03 70);
 
-    --danger: #f08a7f;
-    --danger-soft: #3a1c18;
-    --ok: #4cc38a;
-    --ok-soft: #172b22;
-    --warn: #f0c26a;
-    --warn-soft: #33280f;
-    --sale: #e5564a;
+  --destructive: oklch(0.68 0.15 25);
+  --destructive-foreground: oklch(0.16 0.01 30);
+  --success: oklch(0.75 0.13 162);
+  --success-foreground: oklch(0.19 0.02 160);
+  --sale: oklch(0.63 0.19 27);
 
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 30px -20px rgba(0, 0, 0, 0.8);
-    --shadow-forte: 0 2px 6px rgba(0, 0, 0, 0.55), 0 22px 46px -24px rgba(0, 0, 0, 0.9);
-    color-scheme: dark;
+  --border: oklch(0.32 0.012 75);
+  --input: oklch(0.32 0.012 75);
+  --ring: oklch(0.75 0.13 162);
+}
+
+@theme inline {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-sale: var(--sale);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Referenciados por utilitarios animate-[...] nos componentes. */
+@keyframes sobe {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+}
+
+@keyframes pulso {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes brilho {
+  100% { transform: translateX(100%); }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
   }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: 'ss01', 'cv11';
+  }
+}
+
+/* As variaveis antigas apontam para os tokens novos: as telas que ainda usam o
+   CSS proprio pintam com exatamente as mesmas cores das convertidas, entao a
+   migracao pode ser gradual sem o app ficar de duas caras. */
+:root {
+  --brand: var(--primary);
+  --brand-strong: var(--primary);
+  --brand-soft: var(--secondary);
+  --brand-ink: var(--primary);
+  --bg: var(--background);
+  --surface: var(--card);
+  --surface-2: var(--muted);
+  --text: var(--foreground);
+  --faint: var(--muted-foreground);
+  --danger: var(--destructive);
+  --danger-soft: var(--secondary);
+  --ok: var(--success);
+  --ok-soft: var(--secondary);
+  --warn: var(--accent-foreground);
+  --warn-soft: var(--accent);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.05), 0 10px 26px -18px rgb(0 0 0 / 0.22);
+  --shadow-forte: 0 2px 4px rgb(0 0 0 / 0.07), 0 18px 40px -22px rgb(0 0 0 / 0.3);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 * { box-sizing: border-box; }
@@ -85,7 +168,6 @@ button { cursor: pointer; }
 a { color: var(--brand); }
 
 /* ------------------------------------------------------------------ layout */
-.app { min-height: 100%; display: flex; flex-direction: column; }
 
 .topbar {
   position: sticky; top: 0; z-index: 20;
@@ -96,31 +178,10 @@ a { color: var(--brand); }
   display: flex; align-items: center; gap: 12px;
 }
 .topbar h1 { margin: 0; font-size: 19px; font-weight: 650; letter-spacing: -0.01em; }
-.topbar .sub { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+.topbar .sub { margin: 2px 0 0; font-size: 13px; color: var(--muted-foreground); }
 .topbar .grow { flex: 1; min-width: 0; }
 
 .page { flex: 1; padding: 14px 14px calc(120px + var(--safe-bottom)); width: 100%; margin: 0 auto; }
-
-.tabbar {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
-  display: flex; background: var(--surface);
-  border-top: 1px solid var(--border);
-  padding-bottom: var(--safe-bottom);
-}
-.tabbar a {
-  flex: 1; padding: 9px 4px 10px; text-align: center; text-decoration: none;
-  color: var(--faint); font-size: 11px; font-weight: 550;
-  display: flex; flex-direction: column; align-items: center; gap: 3px;
-  position: relative;
-}
-.tabbar a.active { color: var(--brand); }
-.tabbar a .ico { font-size: 20px; line-height: 1; }
-.tabbar a .dot {
-  position: absolute; top: 6px; right: 50%; margin-right: -18px;
-  min-width: 17px; height: 17px; border-radius: 9px; padding: 0 4px;
-  background: var(--brand); color: #fff; font-size: 10px; font-weight: 700;
-  display: grid; place-items: center;
-}
 
 /* ------------------------------------------------------------------- cards */
 .card {
@@ -153,7 +214,7 @@ a { color: var(--brand); }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .btn-primary { background: var(--brand); border-color: var(--brand); color: #fff; }
 .btn-danger { background: transparent; border-color: transparent; color: var(--danger); }
-.btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--muted-foreground); }
 .btn-block { width: 100%; }
 .btn-lg { padding: 14px 18px; font-size: 16px; border-radius: 13px; }
 .btn-sm { padding: 6px 10px; font-size: 13px; border-radius: 9px; }
@@ -162,7 +223,7 @@ a { color: var(--brand); }
 
 /* ------------------------------------------------------------------ inputs */
 .field { display: block; margin-bottom: 12px; }
-.field > span { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+.field > span { display: block; font-size: 13px; font-weight: 600; color: var(--muted-foreground); margin-bottom: 5px; }
 .input {
   width: 100%; padding: 11px 13px; border-radius: 11px;
   border: 1px solid var(--border); background: var(--surface-2); color: var(--text);
@@ -190,7 +251,7 @@ a { color: var(--brand); }
 .thumb-fallback { display: grid; place-items: center; font-size: 20px; }
 .item .body { flex: 1; min-width: 0; }
 .item .name { font-weight: 550; font-size: 14.5px; overflow-wrap: anywhere; }
-.item .meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.item .meta { font-size: 12.5px; color: var(--muted-foreground); margin-top: 2px; display: flex; flex-wrap: wrap; gap: 4px 8px; }
 .item.done .name { text-decoration: line-through; color: var(--faint); }
 .item.done .thumb, .item.done .thumb-wrap { opacity: 0.45; }
 
@@ -212,7 +273,7 @@ a { color: var(--brand); }
 .badge {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 2px 7px; border-radius: 7px; font-size: 11.5px; font-weight: 650;
-  background: var(--surface-2); color: var(--muted); border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--muted-foreground); border: 1px solid var(--border);
 }
 .badge.brand { background: var(--brand-soft); color: var(--brand-ink); border-color: transparent; }
 .badge.ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
@@ -235,7 +296,7 @@ a { color: var(--brand); }
   padding: 3px 8px; border-radius: 8px; background: var(--surface-2);
   border: 1px solid var(--border); font-size: 12.5px;
 }
-.price-tag .m { font-weight: 650; color: var(--muted); }
+.price-tag .m { font-weight: 650; color: var(--muted-foreground); }
 .price-tag .v { font-weight: 700; font-variant-numeric: tabular-nums; }
 .price-tag.best { background: var(--ok-soft); border-color: transparent; }
 .price-tag.best .m, .price-tag.best .v { color: var(--ok); }
@@ -249,12 +310,12 @@ a { color: var(--brand); }
   flex: 1; background: var(--surface-2); border: 1px solid var(--border);
   border-radius: 11px; padding: 10px 12px;
 }
-.stat .label { font-size: 11.5px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.stat .label { font-size: 11.5px; color: var(--muted-foreground); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .stat .value { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
 .stat.spent .value { color: var(--brand); }
 
 /* ---------------------------------------------------------------- diversos */
-.empty { text-align: center; padding: 44px 20px; color: var(--muted); }
+.empty { text-align: center; padding: 44px 20px; color: var(--muted-foreground); }
 .empty .ico { font-size: 40px; margin-bottom: 10px; }
 .empty h3 { margin: 0 0 6px; font-size: 16.5px; color: var(--text); }
 .empty p { margin: 0; font-size: 14px; }
@@ -289,11 +350,11 @@ a { color: var(--brand); }
 }
 @keyframes rise { from { transform: translateY(14px); } }
 .sheet h2 { margin: 0 0 4px; font-size: 17.5px; }
-.sheet .sheet-sub { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; }
+.sheet .sheet-sub { margin: 0 0 14px; color: var(--muted-foreground); font-size: 13.5px; }
 
 .money { font-variant-numeric: tabular-nums; }
 .right { margin-left: auto; }
-.muted { color: var(--muted); }
+.muted { color: var(--muted-foreground); }
 .faint { color: var(--faint); }
 .small { font-size: 12.5px; }
 .strike { text-decoration: line-through; }
@@ -301,116 +362,17 @@ a { color: var(--brand); }
 .row { display: flex; align-items: center; gap: 8px; }
 .stack { display: flex; flex-direction: column; gap: 8px; }
 
-.offline-pill {
-  position: fixed; left: 50%; transform: translateX(-50%);
-  bottom: calc(70px + var(--safe-bottom)); z-index: 35;
-  background: var(--warn-soft); color: var(--warn);
-  padding: 6px 13px; border-radius: 999px; font-size: 12.5px; font-weight: 650;
-  box-shadow: var(--shadow);
-}
-
 /* ------------------------------------------------- produtos (estilo mercado) */
 /* Cartao vertical com a foto grande: a linha compacta de antes deixava a
    imagem em 46px, do tamanho de um favicon, e o nome disputava espaco com o
    botao de adicionar. */
-.produtos {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 10px;
-}
 
-.produto {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  box-shadow: var(--shadow);
-}
-
-.produto-foto {
-  position: relative;
-  aspect-ratio: 1;
-  background: #fff;
-  display: grid;
-  place-items: center;
-  padding: 8px;
-}
 @media (prefers-color-scheme: dark) {
   /* As fotos dos mercados vem com fundo branco recortado; manter o branco
      evita a moldura cinza feia no tema escuro. */
-  .produto-foto { background: #f4f6f8; }
-}
-.produto-foto img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-.produto-foto .vazio { font-size: 40px; opacity: 0.5; }
-
-.produto-corpo { padding: 9px 10px 10px; display: flex; flex-direction: column; gap: 5px; flex: 1; }
-.produto-nome {
-  font-size: 13.5px;
-  font-weight: 600;
-  line-height: 1.3;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.produto-marca { font-size: 11.5px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.03em; }
-
-.produto-preco { margin-top: auto; }
-.produto-preco .valor { font-size: 17px; font-weight: 750; font-variant-numeric: tabular-nums; }
-.produto-preco .onde { font-size: 11.5px; color: var(--muted); font-weight: 600; }
-.produto-preco .outros { font-size: 11px; color: var(--faint); }
-
-.produto-add {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  border: none;
-  background: var(--brand);
-  color: #fff;
-  font-size: 19px;
-  line-height: 1;
-  display: grid;
-  place-items: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-}
-.produto-add.ok { background: var(--ok); }
-.produto-add:active { transform: scale(0.92); }
-
-.produto-economia {
-  position: absolute;
-  bottom: 6px;
-  left: 6px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: var(--ok);
-  color: #fff;
-  font-size: 10.5px;
-  font-weight: 700;
 }
 
 /* Prateleira: rola na horizontal no celular, cabe em grade no desktop. */
-.prateleira {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 150px;
-  gap: 10px;
-  overflow-x: auto;
-  padding-bottom: 6px;
-  scroll-snap-type: x proximity;
-  scrollbar-width: none;
-}
-.prateleira::-webkit-scrollbar { display: none; }
-.prateleira > * { scroll-snap-align: start; }
 
 .sugestoes {
   position: absolute;
@@ -443,7 +405,7 @@ a { color: var(--brand); }
 .sugestao .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 /* Sem display:block o nome e o mercado saem colados na mesma linha. */
 .sugestao .nome { display: block; font-size: 13.5px; font-weight: 550; line-height: 1.3; }
-.sugestao .det { display: block; font-size: 12px; color: var(--muted); }
+.sugestao .det { display: block; font-size: 12px; color: var(--muted-foreground); }
 .sugestao .preco { font-weight: 700; font-variant-numeric: tabular-nums; font-size: 13.5px; }
 .campo-com-sugestao { position: relative; flex: 1; }
 
@@ -451,226 +413,35 @@ a { color: var(--brand); }
 /* Sem isto o app e um layout de celular esticado: as abas ocupavam a largura
    toda da tela e a coluna de conteudo ficava perdida no meio. */
 @media (min-width: 900px) {
-  .tabbar {
-    top: 0;
-    bottom: 0;
-    right: auto;
-    width: 208px;
-    flex-direction: column;
-    justify-content: flex-start;
-    gap: 2px;
-    border-top: none;
-    border-right: 1px solid var(--border);
-    padding: 18px 10px;
-  }
-  .tabbar a {
-    flex: none;
-    flex-direction: row;
-    justify-content: flex-start;
-    gap: 11px;
-    padding: 11px 13px;
-    border-radius: 10px;
-    font-size: 14.5px;
-  }
-  .tabbar a.active { background: var(--brand-soft); }
-  .tabbar a .ico { font-size: 18px; }
-  .tabbar a .dot { position: static; margin: 0 0 0 auto; }
 
-  .app { padding-left: 208px; }
   .topbar { padding-left: 26px; padding-right: 26px; }
   .topbar > .grow, .page { max-width: 1000px; margin-inline: auto; width: 100%; }
   .page { padding: 20px 26px 40px; }
-  .produtos { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
-  .prateleira { grid-auto-columns: 180px; gap: 14px; }
-  .offline-pill { bottom: 20px; left: calc(50% + 104px); }
 }
 
 /* ------------------------------------------------------------- corredores */
 /* Os setores do mercado. Icone grande e nome curto: da para escolher de
    relance, como quem olha a placa do corredor. */
-.corredores {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 9px;
-}
-.corredor {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 13px;
-  padding: 13px 6px 11px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 7px;
-  box-shadow: var(--shadow);
-  transition: transform 0.08s, border-color 0.15s;
-}
-.corredor:active { transform: scale(0.97); }
-.corredor.on { border-color: var(--brand); background: var(--brand-soft); }
-.corredor .ico { font-size: 32px; line-height: 1; }
-.corredor .nome { font-size: 12px; font-weight: 650; line-height: 1.25; text-align: center; }
-.corredor .qtd { font-size: 10.5px; color: var(--faint); }
 
 /* ------------------------------------------------- cartao de produto (v2) */
-.produto-nome { font-size: 13px; min-height: 2.6em; }
-.produto-preco .valor { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; }
-.produto-preco .linha { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
-.produto-desconto {
-  background: var(--ok-soft);
-  color: var(--ok);
-  font-size: 11px;
-  font-weight: 750;
-  padding: 1px 5px;
-  border-radius: 5px;
-}
-.produto-botao {
-  margin: 0 10px 10px;
-  padding: 8px;
-  border-radius: 9px;
-  border: 1px solid var(--brand);
-  background: transparent;
-  color: var(--brand);
-  font-size: 13px;
-  font-weight: 700;
-}
-.produto-botao.ok { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
-.produto-botao:active { transform: scale(0.97); }
 
 @media (min-width: 900px) {
   /* Aproveita a tela: antes era uma coluna estreita perdida no meio. */
-  .topbar > .grow, .page { max-width: 1460px; }
+  .topbar > .grow, .page { max-width: 46rem; }
   .page { padding: 22px 30px 40px; }
-  .produtos { grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 16px; }
-  .prateleira { grid-auto-columns: 196px; gap: 16px; }
-  .corredores { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 14px; }
-  .corredor { padding: 18px 10px 14px; }
-  .corredor .ico { font-size: 40px; }
-  .corredor .nome { font-size: 13px; }
-  .produto-nome { font-size: 13.5px; }
-  .produto:hover { transform: translateY(-2px); border-color: var(--brand); }
-  .produto { transition: transform 0.12s, border-color 0.15s; }
 }
 
 /* ------------------------------------------------------- corredores (v2) */
 /* Uma faixa que rola, com a foto de um produto da categoria -- do jeito que
    os proprios mercados fazem. Em grade, os corredores comiam a tela toda
    antes de aparecer um produto. */
-.corredores {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 92px;
-  gap: 12px;
-  overflow-x: auto;
-  padding: 2px 0 8px;
-  scrollbar-width: none;
-  grid-template-columns: none;
-}
-.corredores::-webkit-scrollbar { display: none; }
-.corredor {
-  background: none;
-  border: none;
-  box-shadow: none;
-  padding: 0;
-  gap: 6px;
-}
-.corredor .capa {
-  width: 92px;
-  height: 92px;
-  border-radius: 14px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  overflow: hidden;
-  display: grid;
-  place-items: center;
-  transition: border-color 0.15s, transform 0.08s;
-}
-.corredor .capa img { width: 100%; height: 100%; object-fit: contain; padding: 8px; background: #fff; }
-.corredor .capa .ico { font-size: 34px; }
-.corredor.on .capa { border-color: var(--brand); border-width: 2px; }
-.corredor:active .capa { transform: scale(0.96); }
-.corredor .nome { font-size: 12px; font-weight: 600; line-height: 1.2; }
-.corredor .qtd { display: none; }
 
 /* ------------------------------------------------- cartao de produto (v3) */
-.produto-desconto {
-  position: absolute;
-  top: 7px;
-  left: 7px;
-  z-index: 2;
-  background: var(--sale);
-  color: #fff;
-  font-size: 11.5px;
-  font-weight: 750;
-  padding: 2px 6px;
-  border-radius: 5px;
-}
-.produto-de { font-size: 12px; color: var(--faint); text-decoration: line-through; }
-.produto-preco .unidade { font-size: 12px; font-weight: 600; color: var(--muted); }
-
-.produto-qtd { display: flex; align-items: center; gap: 6px; margin: 0 10px 8px; }
-.produto-qtd button {
-  width: 30px; height: 30px; flex: none;
-  border-radius: 8px; border: 1px solid var(--border);
-  background: var(--surface-2); font-size: 16px; line-height: 1;
-  display: grid; place-items: center;
-}
-.produto-qtd .n { flex: 1; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
-
-.produto-botao {
-  background: var(--brand);
-  border-color: var(--brand);
-  color: #fff;
-  font-weight: 700;
-}
-.produto-botao.ok { background: var(--ok); border-color: var(--ok); color: #fff; }
-
-@media (min-width: 900px) {
-  .corredores { grid-auto-columns: 112px; gap: 16px; }
-  .corredor .capa { width: 112px; height: 112px; }
-  .corredor .nome { font-size: 12.5px; }
-}
 
 /* -------------------------------------------------- prateleira com setas */
-.prateleira-wrap { position: relative; }
-.prateleira-seta {
-  position: absolute;
-  top: 38%;
-  z-index: 5;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 22px;
-  line-height: 1;
-  display: grid;
-  place-items: center;
-  box-shadow: 0 4px 14px -4px rgba(9, 14, 25, 0.4);
-}
-.prateleira-seta.esquerda { left: -6px; }
-.prateleira-seta.direita { right: -6px; }
-.prateleira-seta:active { transform: scale(0.92); }
 /* No toque a rolagem e com o dedo; as setas atrapalhariam o alcance. */
-@media (hover: none) {
-  .prateleira-seta { display: none; }
-}
 
 /* ------------------------------------------------------------ acabamento */
-.marca { display: none; }
-@media (min-width: 900px) {
-  .marca {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    padding: 6px 13px 18px;
-    font-size: 14px;
-    font-weight: 750;
-    letter-spacing: -0.02em;
-  }
-  .marca img { border-radius: 7px; }
-  .tabbar a.active { background: var(--brand-soft); color: var(--brand-ink); }
-}
 
 /* Busca com a lupa dentro do campo, em vez de um retangulo solto. */
 .busca-mercado { position: relative; }
@@ -686,22 +457,12 @@ a { color: var(--brand); }
 .busca-mercado .input { padding-left: 40px; height: 46px; border-radius: 13px; }
 
 /* O cartao ganha borda que reage e sombra em duas camadas. */
-.produto { border-radius: 15px; }
-.produto:hover { box-shadow: var(--shadow-forte); }
-.produto-foto { background: #fff; }
 @media (prefers-color-scheme: dark) {
   /* Foto de produto vem recortada em branco: manter o branco evita a moldura
      cinza suja no tema escuro. */
-  .produto-foto { background: #faf8f4; }
 }
-.produto-nome { letter-spacing: -0.01em; }
-.produto-marca { font-size: 11px; letter-spacing: 0.05em; color: var(--faint); }
-.produto-preco .valor { letter-spacing: -0.03em; }
-.produto-botao { border-radius: 11px; letter-spacing: -0.01em; }
 
 /* O corredor com a capa mais alta que larga lembra a placa da gondola. */
-.corredor .capa { border-radius: 15px; box-shadow: var(--shadow); }
-.corredor .nome { letter-spacing: -0.01em; }
 
 .card { border-radius: 15px; }
 .btn { letter-spacing: -0.01em; }
@@ -737,15 +498,7 @@ a { color: var(--brand); }
   .skeleton::after { animation: none; }
 }
 
-.produto-foto .skeleton { position: absolute; inset: 0; border-radius: 0; }
-.produto-foto img { position: relative; z-index: 1; opacity: 0; transition: opacity 0.25s; }
-.produto-foto img.carregada { opacity: 1; }
-
 /* Cartao fantasma do primeiro carregamento, com a mesma silhueta do real. */
-.produto.fantasma { pointer-events: none; }
-.produto.fantasma .linha-falsa { height: 11px; border-radius: 5px; margin-bottom: 7px; }
-.produto.fantasma .linha-falsa.curta { width: 55%; }
-.produto.fantasma .bloco-falso { height: 34px; border-radius: 10px; margin: 0 10px 10px; }
 
 /* ------------------------------------------------------------ resposta ao toque */
 /* O meio segundo depois do clique: o botao afunda e o "pronto" pulsa uma vez,
@@ -755,52 +508,10 @@ a { color: var(--brand); }
   35% { transform: scale(1.06); }
   100% { transform: scale(1); }
 }
-.produto-botao { transition: transform 0.09s, background 0.2s, border-color 0.2s; }
-.produto-botao:active { transform: scale(0.96); }
-.produto-botao.ok { animation: pulso-ok 0.4s ease-out; }
 
 /* ----------------------------------------------------------------- toast */
-.toast {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: calc(78px + var(--safe-bottom));
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  max-width: min(440px, calc(100vw - 28px));
-  padding: 11px 14px;
-  border-radius: 13px;
-  background: var(--text);
-  color: var(--bg);
-  box-shadow: var(--shadow-forte);
-  font-size: 13.5px;
-  font-weight: 600;
-  animation: toast-entra 0.22s ease-out;
-}
 @keyframes toast-entra {
   from { opacity: 0; transform: translate(-50%, 10px); }
 }
-.toast .msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.toast button {
-  flex: none;
-  border: none;
-  background: none;
-  color: var(--brand-strong);
-  font: inherit;
-  font-weight: 750;
-  padding: 2px 4px;
-}
-@media (prefers-color-scheme: dark) {
-  .toast button { color: var(--brand); }
-}
-@media (min-width: 900px) {
-  .toast { bottom: 24px; left: calc(50% + 104px); }
-}
 
 /* A capa do corredor segue a mesma regra da foto do produto. */
-.corredor .capa { position: relative; }
-.corredor .capa .skeleton { position: absolute; inset: 0; }
-.corredor .capa img { position: relative; z-index: 1; opacity: 0; transition: opacity 0.25s; }
-.corredor .capa img.carregada { opacity: 1; }

@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
-import { useStore } from '../lib/store';
-import { money } from '../lib/format';
-import { ListItemRow } from '../components/ListItemRow';
-import { Sheet } from '../components/Sheet';
-import { Thumb } from '../components/Thumb';
-import type { ListItem, Product, ShoppingList, Trip } from '../lib/types';
+import { ClipboardList, ListChecks, Pencil, Plus, ShoppingCart, Store, Wallet } from 'lucide-react';
+import { api } from '@/lib/api';
+import { useStore } from '@/lib/store';
+import { money } from '@/lib/format';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { EmptyState, Page, SectionTitle, Topbar } from '@/components/Layout';
+import { ListItemRow } from '@/components/ListItemRow';
+import { Sheet } from '@/components/Sheet';
+import { Thumb } from '@/components/Thumb';
+import type { ListItem, Product, ShoppingList, Trip } from '@/lib/types';
 
 /**
  * A lista geral: e aqui que se anota o que precisa comprar. Nao e o carrinho --
@@ -135,27 +140,26 @@ export default function List() {
 
   return (
     <>
-      <header className="topbar">
-        <div className="grow">
-          <h1>Lista</h1>
-          <p className="sub">
-            {count === 0
-              ? 'vazia por enquanto'
-              : `${count} ${count === 1 ? 'item' : 'itens'}${planned.total > 0 ? ` · ≈ ${money(planned.total)}` : ''}`}
-          </p>
-        </div>
+      <Topbar
+        title="Lista"
+        subtitle={
+          count === 0
+            ? 'vazia por enquanto'
+            : `${count} ${count === 1 ? 'item' : 'itens'}${planned.total > 0 ? ` · ≈ ${money(planned.total)}` : ''}`
+        }
+      >
         {count > 0 && (
-          <button className="btn btn-sm" onClick={() => setSheet('save')}>
+          <Button variant="outline" size="sm" onClick={() => setSheet('save')}>
             Salvar
-          </button>
+          </Button>
         )}
-      </header>
+      </Topbar>
 
-      <main className="page">
-        <form className="searchbar" onSubmit={addTexto} style={{ marginBottom: 12 }}>
-          <div className="campo-com-sugestao">
-            <input
-              className="input"
+      <Page className="md:max-w-3xl">
+        <form className="mb-3 flex items-center gap-2" onSubmit={addTexto}>
+          <div className="relative flex-1">
+            <Input
+              className="h-11"
               placeholder="Preciso comprar…"
               value={quick}
               onChange={(e) => {
@@ -171,17 +175,22 @@ export default function List() {
             />
 
             {mostrarSugestoes && quick.trim().length >= 2 && (sugestoes.length > 0 || buscando) && (
-              <div className="sugestoes">
+              <div className="bg-popover absolute top-[calc(100%+0.4rem)] right-0 left-0 z-30 max-h-[60vh] overflow-y-auto rounded-xl border shadow-2xl">
                 {sugestoes.map((p) => (
-                  <button type="button" className="sugestao" key={p.id} onClick={() => void addProduto(p)}>
+                  <button
+                    type="button"
+                    key={p.id}
+                    onClick={() => void addProduto(p)}
+                    className="hover:bg-muted flex w-full items-center gap-2.5 border-b px-3 py-2.5 text-left last:border-b-0"
+                  >
                     <Thumb src={p.imageUrl} category={p.category} alt={p.name} />
-                    <span className="info">
-                      <span className="nome">{p.name}</span>
-                      <span className="det">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13.5px] font-semibold">{p.name}</span>
+                      <span className="text-muted-foreground block text-xs">
                         {p.cheapest ? `${p.cheapest.marketLabel}${p.marketsCount > 1 ? ` · +${p.marketsCount - 1}` : ''}` : 'sem preço'}
                       </span>
                     </span>
-                    {p.cheapest && <span className="preco">{money(p.cheapest.price)}</span>}
+                    {p.cheapest && <span className="text-sm font-bold tabular-nums">{money(p.cheapest.price)}</span>}
                   </button>
                 ))}
                 {buscando && sugestoes.length === 0 && (
@@ -189,21 +198,26 @@ export default function List() {
                     procurando nos mercados…
                   </span>
                 )}
-                <button type="button" className="sugestao" onClick={() => void addTexto()}>
-                  <span className="thumb thumb-fallback" aria-hidden="true">
-                    ✏️
+                <button
+                  type="button"
+                  onClick={() => void addTexto()}
+                  className="hover:bg-muted flex w-full items-center gap-2.5 px-3 py-2.5 text-left"
+                >
+                  <span className="bg-muted text-muted-foreground grid size-10 shrink-0 place-items-center rounded-lg">
+                    <Pencil className="size-4" />
                   </span>
-                  <span className="info">
-                    <span className="nome">Anotar “{quick.trim()}” à mão</span>
-                    <span className="det">sem produto do mercado, então sem preço</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13.5px] font-semibold">Anotar “{quick.trim()}” à mão</span>
+                    <span className="text-muted-foreground block text-xs">sem produto do mercado, então sem preço</span>
                   </span>
                 </button>
               </div>
             )}
           </div>
-          <button className="btn btn-primary" disabled={!quick.trim()}>
+          <Button size="lg" disabled={!quick.trim()}>
+            <Plus />
             Add
-          </button>
+          </Button>
         </form>
 
         {error && (
@@ -232,32 +246,27 @@ export default function List() {
         )}
 
         {count === 0 ? (
-          <div className="empty">
-            <div className="ico">📝</div>
-            <h3>A lista está vazia</h3>
-            <p>
-              Anote acima — o app sugere o produto dos mercados com preço. Ou escolha olhando as prateleiras no Mercado.
-            </p>
-            <div className="btn-row" style={{ marginTop: 16, maxWidth: 320, marginInline: 'auto' }}>
-              <button className="btn" onClick={() => navigate('/')}>
-                🏪 Mercado
-              </button>
-              <button className="btn" onClick={() => navigate('/listas')}>
-                📋 Listas
-              </button>
+          <EmptyState icon={<ClipboardList />} title="A lista está vazia">
+            <p>Anote acima — o app sugere o produto dos mercados com preço. Ou escolha olhando as prateleiras no Mercado.</p>
+            <div className="mx-auto mt-4 flex max-w-xs gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => navigate('/')}>
+                <Store />
+                Mercado
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={() => navigate('/listas')}>
+                <ListChecks />
+                Listas
+              </Button>
             </div>
-          </div>
+          </EmptyState>
         ) : (
           <>
             {grouped.map((group) => (
               <div key={group.key}>
-                <div className="section-title">
-                  <span>
-                    {group.emoji} {group.label}
-                  </span>
-                  <span className="count right">{group.items.length}</span>
-                </div>
-                <div className="card">
+                <SectionTitle action={<span className="text-muted-foreground text-sm">{group.items.length}</span>}>
+                  {group.label}
+                </SectionTitle>
+                <Card className="overflow-hidden">
                   {group.items.map((item) => (
                     <ListItemRow
                       key={item.id}
@@ -266,29 +275,31 @@ export default function List() {
                       onRemove={() => act(api.del<{ list: ShoppingList }>(`/lists/geral/items/${item.id}`))}
                     />
                   ))}
-                </div>
+                </Card>
               </div>
             ))}
 
-            <div className="stack" style={{ marginTop: 22 }}>
-              <button className="btn btn-block" onClick={() => navigate('/comparar')}>
-                💰 Onde vale mais a pena?
-              </button>
-              <button className="btn btn-primary btn-block btn-lg" onClick={openBuild} disabled={!!trip}>
-                🛒 Montar carrinho
-              </button>
+            <div className="mt-6 flex flex-col gap-2">
+              <Button variant="outline" size="lg" className="w-full" onClick={() => navigate('/comparar')}>
+                <Wallet />
+                Onde vale mais a pena?
+              </Button>
+              <Button size="lg" className="w-full" onClick={openBuild} disabled={!!trip}>
+                <ShoppingCart />
+                Montar carrinho
+              </Button>
               <p className="small faint" style={{ margin: '0 4px' }}>
                 O preço é congelado aqui, na lista — no mercado o app não fica consultando preço, só carrega este número.
                 {planned.semPreco > 0 &&
                   ` ${planned.semPreco} ${planned.semPreco === 1 ? 'item escrito' : 'itens escritos'} à mão ${planned.semPreco === 1 ? 'não tem' : 'não têm'} preço.`}
               </p>
-              <button className="btn btn-danger btn-block btn-sm" onClick={() => setSheet('clear')}>
+              <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10 w-full" onClick={() => setSheet('clear')}>
                 Limpar a lista
-              </button>
+              </Button>
             </div>
           </>
         )}
-      </main>
+      </Page>
 
       {sheet === 'build' && (
         <Sheet

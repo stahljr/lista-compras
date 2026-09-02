@@ -1,6 +1,11 @@
 import { useState } from 'react';
-import { money, quantity as fmtQty } from '../lib/format';
-import type { Product } from '../lib/types';
+import { Minus, Plus, ShoppingCart, Check } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { money, quantity as fmtQty } from '@/lib/format';
+import type { Product } from '@/lib/types';
 
 export const EMOJI: Record<string, string> = {
   hortifruti: '🥬', padaria: '🥖', acougue: '🥩', frios: '🧀', matinais: '☕',
@@ -18,12 +23,11 @@ export function savingsOf(product: Product) {
 }
 
 /**
- * O produto como numa gondola de mercado: foto grande, o quanto se economiza
- * escolhendo o mercado certo, o preco em destaque, quantidade e um botao largo
- * de adicionar. Da para escolher e pegar dois sem sair da tela.
+ * O produto como numa gondola: foto grande no topo, o quanto se economiza
+ * escolhendo o mercado certo, preco em destaque, quantidade e um botao largo.
  */
 export function ProductCard({ product, onAdd, added }: { product: Product; onAdd: (qty: number) => void; added?: boolean }) {
-  const [broken, setBroken] = useState(false);
+  const [quebrada, setQuebrada] = useState(false);
   const [carregada, setCarregada] = useState(false);
   const [qty, setQty] = useState(1);
   const melhor = product.cheapest;
@@ -32,91 +36,100 @@ export function ProductCard({ product, onAdd, added }: { product: Product; onAdd
   const porUnidade = product.unit && product.unit !== 'un' ? `/${product.unit}` : '';
 
   return (
-    <div className="produto">
-      {economia.percent >= 3 && <span className="produto-desconto">−{economia.percent}%</span>}
+    <Card className="group relative overflow-hidden transition-shadow hover:shadow-lg">
+      {economia.percent >= 3 && (
+        <Badge variant="sale" className="absolute top-2 left-2 z-10 text-[11px]">
+          −{economia.percent}%
+        </Badge>
+      )}
 
-      <div className="produto-foto">
-        {product.imageUrl && !broken ? (
+      {/* Fundo claro fixo: a foto dos mercados vem recortada em branco, e no
+          tema escuro um fundo escuro deixaria a moldura suja. */}
+      <div className="relative grid aspect-square place-items-center bg-neutral-50 p-2">
+        {product.imageUrl && !quebrada ? (
           <>
-            {/* Enquanto a foto nao chega, o lugar dela nao fica em branco. */}
-            {!carregada && <span className="skeleton" aria-hidden="true" />}
+            {!carregada && <Skeleton className="absolute inset-0 rounded-none" />}
             <img
-              className={carregada ? 'carregada' : undefined}
               src={product.imageUrl}
               alt={product.name}
               loading="lazy"
               decoding="async"
               onLoad={() => setCarregada(true)}
-              onError={() => setBroken(true)}
+              onError={() => setQuebrada(true)}
+              className={`relative size-full object-contain transition-opacity duration-300 ${carregada ? 'opacity-100' : 'opacity-0'}`}
             />
           </>
         ) : (
-          <span className="vazio" aria-hidden="true">
+          <span className="text-4xl opacity-45" aria-hidden="true">
             {EMOJI[product.category] || '📦'}
           </span>
         )}
       </div>
 
-      <div className="produto-corpo">
-        <div className="produto-nome">{product.name}</div>
-        {product.brand && <div className="produto-marca">{product.brand}</div>}
-        <div className="produto-preco">
+      <div className="flex flex-1 flex-col gap-1 px-2.5 pt-2.5">
+        <p className="line-clamp-2 min-h-[2.6em] text-[13px] leading-snug font-semibold tracking-tight">{product.name}</p>
+        {product.brand && (
+          <p className="text-muted-foreground/80 truncate text-[10.5px] font-semibold tracking-wider uppercase">
+            {product.brand}
+          </p>
+        )}
+
+        <div className="mt-auto pt-1">
           {melhor ? (
             <>
-              {/* O "de" e o preco do mercado mais caro: mostra o que se ganha
-                  comprando no lugar certo, nao uma promocao inventada. */}
-              {economia.percent >= 3 && <div className="produto-de">{money(economia.max)}</div>}
-              <div className="linha">
-                <span className="valor">{money(melhor.price)}</span>
-                {porUnidade && <span className="unidade">{porUnidade}</span>}
-              </div>
-              <div className="onde">
+              {economia.percent >= 3 && (
+                <p className="text-muted-foreground/70 text-xs line-through">{money(economia.max)}</p>
+              )}
+              <p className="text-[19px] leading-tight font-extrabold tracking-tighter tabular-nums">
+                {money(melhor.price)}
+                {porUnidade && <span className="text-muted-foreground ml-0.5 text-xs font-semibold">{porUnidade}</span>}
+              </p>
+              <p className="text-muted-foreground text-[11.5px] font-semibold">
                 {melhor.marketLabel}
-                {outros > 0 && <span className="outros"> · +{outros}</span>}
-              </div>
+                {outros > 0 && <span className="text-muted-foreground/70 font-normal"> · +{outros}</span>}
+              </p>
             </>
           ) : (
-            <div className="outros">sem preço agora</div>
+            <p className="text-muted-foreground/70 text-xs">sem preço agora</p>
           )}
         </div>
       </div>
 
-      <div className="produto-qtd">
-        <button onClick={() => setQty((q) => Math.max(1, q - 1))} aria-label="Menos" disabled={qty <= 1}>
-          −
-        </button>
-        <span className="n">{fmtQty(qty)}</span>
-        <button onClick={() => setQty((q) => q + 1)} aria-label="Mais">
-          +
-        </button>
+      <div className="flex items-center gap-1.5 px-2.5 py-2">
+        <Button variant="outline" size="icon" className="size-8" onClick={() => setQty((q) => Math.max(1, q - 1))} disabled={qty <= 1} aria-label="Menos">
+          <Minus />
+        </Button>
+        <span className="flex-1 text-center text-sm font-bold tabular-nums">{fmtQty(qty)}</span>
+        <Button variant="outline" size="icon" className="size-8" onClick={() => setQty((q) => q + 1)} aria-label="Mais">
+          <Plus />
+        </Button>
       </div>
 
-      <button
-        className={`produto-botao${added ? ' ok' : ''}`}
+      <Button
+        className={`mx-2.5 mb-2.5 ${added ? 'bg-success text-success-foreground hover:bg-success animate-[pulso_0.4s_ease-out]' : ''}`}
         onClick={() => {
           onAdd(qty);
           setQty(1);
         }}
       >
-        {added ? '✓ Adicionado' : '🛒 Adicionar'}
-      </button>
-    </div>
+        {added ? <Check /> : <ShoppingCart />}
+        {added ? 'Adicionado' : 'Adicionar'}
+      </Button>
+    </Card>
   );
 }
 
 /** A silhueta do cartao enquanto os dados nao chegam. */
 export function ProductCardSkeleton() {
   return (
-    <div className="produto fantasma" aria-hidden="true">
-      <div className="produto-foto">
-        <span className="skeleton" />
+    <Card className="pointer-events-none overflow-hidden" aria-hidden="true">
+      <Skeleton className="aspect-square rounded-none" />
+      <div className="flex flex-col gap-2 p-2.5">
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-3/5" />
+        <Skeleton className="mt-1 h-5 w-2/5" />
       </div>
-      <div className="produto-corpo">
-        <span className="linha-falsa skeleton" />
-        <span className="linha-falsa curta skeleton" />
-        <span className="linha-falsa skeleton" style={{ width: '40%', height: 17 }} />
-      </div>
-      <span className="bloco-falso skeleton" />
-    </div>
+      <Skeleton className="mx-2.5 mb-2.5 h-9" />
+    </Card>
   );
 }

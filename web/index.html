@@ -22,6 +22,20 @@
     <title>Lista de Compras</title>
   </head>
   <body>
+    <script>
+      // O shadcn/ui espera a classe .dark no html, e nao a media query -- e o
+      // que faz os utilitarios "dark:" dos componentes colados funcionarem.
+      // Roda antes da pintura para nao haver piscada de tema claro.
+      (function () {
+        try {
+          var salvo = localStorage.getItem('lc_tema');
+          var escuro = salvo ? salvo === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.classList.toggle('dark', escuro);
+        } catch (e) {
+          /* armazenamento bloqueado: segue no tema claro */
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
