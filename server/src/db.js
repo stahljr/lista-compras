@@ -162,6 +162,22 @@ CREATE TABLE IF NOT EXISTS price_history (
 CREATE INDEX IF NOT EXISTS idx_price_history_key ON price_history(match_key, recorded_at);
 `);
 
+/**
+ * Colunas acrescentadas depois que ja havia banco em uso. SQLite nao tem
+ * "ADD COLUMN IF NOT EXISTS", entao a existencia e conferida antes.
+ */
+function addColumn(table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (cols.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+// Preco de cada mercado no momento em que o item entrou na lista. E este o
+// numero que vale no mercado: quem esta com o carrinho na mao nao quer que o
+// app saia consultando preco novo -- a decisao de onde comprar ja foi tomada.
+addColumn('list_items', 'price_snapshot', 'TEXT');
+addColumn('list_items', 'snapshot_at', 'TEXT');
+
 export function nowIso() {
   return new Date().toISOString().replace('T', ' ').slice(0, 19);
 }

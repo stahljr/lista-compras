@@ -4,6 +4,7 @@ import { requireAuth } from '../auth.js';
 import { getCart, assertListInHousehold } from '../households.js';
 import { hydrate } from '../catalog.js';
 import { compareBasket } from '../compare.js';
+import { snapshotOf, writeSnapshot, readSnapshot, refreshListSnapshots } from '../snapshot.js';
 import { categoryOrder } from '../categories.js';
 import { publish } from '../realtime.js';
 
@@ -32,6 +33,9 @@ function itemsOf(listId) {
       position: r.position,
       addedBy: r.added_by ? { id: r.added_by, name: r.added_by_name, color: r.added_by_color } : null,
       createdAt: r.created_at,
+      // Preco por mercado, congelado quando o item entrou na lista.
+      priceSnapshot: readSnapshot(r),
+      snapshotAt: r.snapshot_at,
     }))
     .sort(
       (a, b) =>
@@ -158,10 +162,14 @@ listsRouter.post('/:id/items', (req, res, next) => {
       db.prepare("UPDATE list_items SET qty = qty + ?, updated_at = datetime('now') WHERE id = ?").run(qty, existing.id);
     } else {
       const nextPos = db.prepare('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM list_items WHERE list_id = ?').get(list.id).p;
-      db.prepare(
-        `INSERT INTO list_items (list_id, product_id, name, qty, unit, category, image_url, note, position, added_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(list.id, productId, name, qty, unit, category, imageUrl, body.note || null, nextPos, req.user.id);
+      const info = db
+        .prepare(
+          `INSERT INTO list_items (list_id, product_id, name, qty, unit, category, image_url, note, position, added_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(list.id, productId, name, qty, unit, category, imageUrl, body.note || null, nextPos, req.user.id);
+      // Congela aqui o preco de cada mercado: e o numero que vai valer na compra.
+      if (productId) writeSnapshot(info.lastInsertRowid, snapshotOf(productId));
     }
     touch(list.id);
     publish(req.user.householdId, list.kind === 'cart' ? 'cart' : 'lists', { listId: list.id });
@@ -244,9 +252,12 @@ listsRouter.post('/:id/add-to-cart', (req, res, next) => {
         } else {
           const nextPos = db.prepare('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM list_items WHERE list_id = ?').get(cart.id).p;
           db.prepare(
-            `INSERT INTO list_items (list_id, product_id, name, qty, unit, category, image_url, note, position, added_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          ).run(cart.id, item.product_id, item.name, item.qty, item.unit, item.category, item.image_url, item.note, nextPos, req.user.id);
+            `INSERT INTO list_items (list_id, product_id, name, qty, unit, category, image_url, note, position, added_by, price_snapshot, snapshot_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).run(
+            cart.id, item.product_id, item.name, item.qty, item.unit, item.category, item.image_url, item.note, nextPos,
+            req.user.id, item.price_snapshot, item.snapshot_at,
+          );
         }
       }
     });
@@ -270,8 +281,9 @@ listsRouter.post('/cart/save-as', (req, res, next) => {
       .run(req.user.householdId, name, String(req.body?.emoji || '📝').slice(0, 8), req.user.id);
     const newId = info.lastInsertRowid;
     db.prepare(
-      `INSERT INTO list_items (list_id, product_id, name, qty, unit, category, image_url, note, position, added_by)
-       SELECT ?, product_id, name, qty, unit, category, image_url, note, position, added_by FROM list_items WHERE list_id = ?`,
+      `INSERT INTO list_items (list_id, product_id, name, qty, unit, category, image_url, note, position, added_by, price_snapshot, snapshot_at)
+       SELECT ?, product_id, name, qty, unit, category, image_url, note, position, added_by, price_snapshot, snapshot_at
+         FROM list_items WHERE list_id = ?`,
     ).run(newId, cart.id);
     publish(req.user.householdId, 'lists');
     res.json({ list: listPayload(db.prepare('SELECT * FROM lists WHERE id = ?').get(newId)) });
@@ -286,6 +298,9 @@ listsRouter.get('/:id/compare', async (req, res, next) => {
     const list = resolveList(req);
     const items = db.prepare('SELECT * FROM list_items WHERE list_id = ?').all(list.id);
     const result = await compareBasket(items, { refresh: req.query.refresh !== '0' });
+    // O comparador acabou de consultar os mercados: este e o preco que a pessoa
+    // viu ao decidir, entao e ele que fica gravado para a compra usar.
+    refreshListSnapshots(list.id);
     res.json({ listId: list.id, listName: list.name, ...result });
   } catch (err) {
     next(err);

@@ -22,32 +22,50 @@ mercearia, limpeza…) na ordem em que se anda pelas gôndolas.
 repetem — limpeza, churrasco, farmácia — e jogar a lista inteira no carrinho
 com um toque. O carrinho atual também pode ser salvo como lista.
 
-**Onde comprar.** Com o carrinho montado, o app calcula quanto sairia em cada
-mercado e aponta o melhor. Testa também as seis combinações de dois mercados e
-sugere dividir a compra quando isso economiza de verdade.
+**Onde comprar — na hora de montar a lista.** Comparar preço é decisão de
+planejamento, não de corredor. Com a lista montada, o app calcula quanto sairia
+em cada mercado, aponta o melhor, e testa as seis combinações de dois mercados
+para sugerir dividir a compra quando isso economiza de verdade. É aqui que se
+decide para onde ir.
+
+**O preço é congelado na lista.** Quando um item do catálogo entra na lista, o
+preço de cada mercado é gravado junto com ele — e é reconfirmado quando o
+comparador roda, que é o momento em que se decide. Esse é o número que vale na
+compra. Dentro do mercado o app **não consulta preço nenhum**: só carrega o que
+já estava gravado. É o que faz "Cheguei no mercado" abrir instantaneamente em
+vez de esperar quatro consultas por item, justamente onde o sinal é pior.
 
 **Modo mercado.** Chegando no mercado, "Cheguei no mercado" transforma a lista
-numa compra: marca-se o que já foi pego, anota-se o preço da etiqueta, e o app
-responde a pergunta do corredor — **já pegamos tudo? o que falta?** — com o
-total gasto até ali e o que ainda falta, por seção.
+numa compra. Ali o trabalho é um só: **marcar o que já foi pego**. O total já
+fecha sozinho com o preço da lista, sem você digitar nada, e o app responde a
+pergunta do corredor — **já pegamos tudo? o que falta?** — com o gasto até ali
+e o que resta, por seção.
+
+Corrigir preço é **opcional**: o campo já vem com o preço da lista e só precisa
+ser mexido se a etiqueta estiver diferente. Quando você mexe, o item ganha a
+marca "preço corrigido" e o total se ajusta. Itens escritos à mão não têm preço
+e simplesmente não entram na soma — não viram pendência a cobrar.
 
 **Fechamento.** Ao encerrar, você escolhe o que fazer com a lista: tirar só o
-que comprou e deixar o resto, limpar tudo, ou não mexer. Os preços anotados
-viram histórico, que serve de estimativa na próxima ida.
+que comprou e deixar o resto, limpar tudo, ou não mexer. Os preços que você
+corrigiu à mão viram histórico (o preço da lista já veio do mercado, então não
+é informação nova) e servem de estimativa para itens sem produto vinculado.
 
 **Sinal ruim não trava a compra.** Dentro de alguns mercados o sinal é
 péssimo, e é justamente ali que você está marcando itens. Então:
 
 - O app abre com o último estado conhecido, sem depender da rede. Recarregar
   a página offline mostra a compra em andamento, não a tela de login.
-- Marcar item e anotar preço funcionam sem conexão: a tela responde na hora e
-  a escrita fica numa fila no próprio aparelho. Uma tarja avisa quantas
-  marcações ainda estão só ali.
+- Marcar item e corrigir preço funcionam sem conexão: a tela responde na hora,
+  o total é recalculado no aparelho e a escrita fica numa fila local. Uma tarja
+  avisa quantas marcações ainda estão só ali.
 - Quando o sinal volta, a fila sobe sozinha e o servidor passa a ser a
   verdade. Marcar e depois anotar o preço do mesmo item vira uma escrita só,
   com as duas informações.
-- O que **precisa** de conexão é buscar produto novo e comparar preço — os
-  dois consultam os mercados na hora. O resto da compra segue offline.
+- O que **precisa** de conexão é buscar produto novo e comparar preço — os dois
+  consultam os mercados na hora, e ambos são coisa de montar lista, não de
+  mercado. A compra em si roda offline de ponta a ponta, porque o preço dela já
+  está gravado.
 
 ## Rodando
 
@@ -123,7 +141,9 @@ no catálogo resolve.
   tela; a busca segue com os outros três.
 - **As buscas ficam em cache** (`SEARCH_TTL_MINUTES`, 6h por padrão) para não
   bater nos sites a cada tecla digitada. Os preços dos itens que estão nas
-  listas são reconsultados a cada `REFRESH_HOURS`.
+  listas são reconsultados a cada `REFRESH_HOURS`, para o comparador decidir
+  com número atual — o preço congelado no item só é reescrito quando você abre
+  o comparador.
 - **Os endpoints não são contratos.** São endpoints internos dos sites; se uma
   rede mudar de plataforma, o adaptador daquele mercado para de funcionar e
   precisa ser remapeado. Os outros continuam.
@@ -141,6 +161,7 @@ server/src/
   categories.js       as categorias da casa e a classificação dos produtos
   catalog.js          catálogo unificado: junta os mercados por EAN
   compare.js          custo por mercado e a divisão em dois
+  snapshot.js         congela o preço na montagem da lista e o lê na compra
   refresher.js        reconsulta periódica dos preços das listas
   realtime.js         canal SSE que sincroniza os dois celulares
   markets/            um adaptador por mercado (vtex.js, condor.js)

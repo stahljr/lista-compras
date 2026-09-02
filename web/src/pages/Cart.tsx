@@ -16,6 +16,19 @@ export default function Cart() {
   const [saveName, setSaveName] = useState('');
   const [error, setError] = useState('');
 
+  // O total que a compra vai usar: soma do preco congelado de cada item, no
+  // mercado mais barato conhecido. Comparar refina isso escolhendo um mercado.
+  const planned = useMemo(() => {
+    let total = 0;
+    let semPreco = 0;
+    for (const item of cart?.items || []) {
+      const valores = Object.values(item.priceSnapshot || {}).filter((v) => v > 0);
+      if (!valores.length) semPreco++;
+      else total += Math.min(...valores) * item.qty;
+    }
+    return { total: Math.round(total * 100) / 100, semPreco };
+  }, [cart]);
+
   const grouped = useMemo(() => {
     const map = new Map<string, ListItem[]>();
     for (const item of cart?.items || []) {
@@ -70,7 +83,11 @@ export default function Cart() {
       <header className="topbar">
         <div className="grow">
           <h1>Carrinho</h1>
-          <p className="sub">{count === 0 ? 'vazio por enquanto' : `${count} ${count === 1 ? 'item' : 'itens'}`}</p>
+          <p className="sub">
+            {count === 0
+              ? 'vazio por enquanto'
+              : `${count} ${count === 1 ? 'item' : 'itens'}${planned.total > 0 ? ` · ≈ ${money(planned.total)}` : ''}`}
+          </p>
         </div>
         {count > 0 && (
           <button className="btn btn-sm" onClick={() => setSheet('save')}>
@@ -162,6 +179,11 @@ export default function Cart() {
               <button className="btn btn-block" onClick={() => navigate('/comparar')}>
                 💰 Onde vale mais a pena?
               </button>
+              <p className="small faint" style={{ margin: '0 4px' }}>
+                O preço é congelado agora, na lista — no mercado o app não fica consultando preço, só carrega este número.
+                {planned.semPreco > 0 &&
+                  ` ${planned.semPreco} ${planned.semPreco === 1 ? 'item escrito' : 'itens escritos'} à mão ${planned.semPreco === 1 ? 'não tem' : 'não têm'} preço.`}
+              </p>
               <button className="btn btn-danger btn-block btn-sm" onClick={() => setSheet('clear')}>
                 Limpar o carrinho
               </button>

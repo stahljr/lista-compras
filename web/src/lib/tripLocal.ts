@@ -32,7 +32,7 @@ export function recalcular(trip: Trip): Trip {
       missing: faltando.length,
       complete: trip.items.length > 0 && faltando.length === 0,
       percent: trip.items.length ? Math.round((pegos.length / trip.items.length) * 100) : 0,
-      pickedWithoutPrice: pegos.filter((i) => i.unitPrice == null).length,
+      withoutPrice: trip.items.filter((i) => i.price == null).length,
     },
     missingByCategory: [...porCategoria.values()],
     spent: gasto,
@@ -47,13 +47,17 @@ export function aplicarPatch(trip: Trip, itemId: number, patch: { picked?: boole
     if (item.id !== itemId) return item;
     const picked = patch.picked !== undefined ? patch.picked : item.picked;
     const unitPrice = patch.unitPrice !== undefined ? patch.unitPrice : item.unitPrice;
+    // Mesma regra do servidor: vale o preco corrigido; sem correcao, o da lista.
+    const price = unitPrice ?? item.expected;
     return {
       ...item,
       picked,
       unitPrice,
+      price,
+      corrected: unitPrice != null,
       pickedBy: picked ? quem : null,
       pickedAt: picked ? new Date().toISOString() : null,
-      subtotal: picked && unitPrice != null ? arredonda(unitPrice * (item.pickedQty ?? item.qty)) : null,
+      subtotal: price != null ? arredonda(price * (item.pickedQty ?? item.qty)) : null,
     };
   });
   return recalcular({ ...trip, items });

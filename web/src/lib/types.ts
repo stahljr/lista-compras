@@ -39,6 +39,9 @@ export type ListItem = {
   position: number;
   addedBy: Person | null;
   createdAt: string;
+  /** Preço de cada mercado, congelado quando o item entrou na lista. */
+  priceSnapshot: Record<string, number> | null;
+  snapshotAt: string | null;
 };
 
 export type ShoppingList = {
@@ -70,9 +73,14 @@ export type TripItem = {
   imageUrl: string | null;
   note: string | null;
   picked: boolean;
+  /** Preço corrigido à mão no mercado, quando houver. */
   unitPrice: number | null;
   pickedQty: number | null;
+  /** Preço gravado quando a lista foi montada. */
   expected: number | null;
+  /** O que vale: o corrigido, senão o da lista. */
+  price: number | null;
+  corrected: boolean;
   subtotal: number | null;
   pickedBy: Person | null;
   pickedAt: string | null;
@@ -94,7 +102,7 @@ export type Trip = {
     missing: number;
     complete: boolean;
     percent: number;
-    pickedWithoutPrice: number;
+    withoutPrice: number;
   };
   missingByCategory: { key: string; label: string; items: TripItem[] }[];
   spent: number;

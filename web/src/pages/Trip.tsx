@@ -60,9 +60,10 @@ export default function Trip() {
   }
 
   function priceValue(item: TripItem) {
-    // Enquanto digita, mostra o que foi digitado; parado, mostra como dinheiro.
+    // Enquanto digita, mostra o que foi digitado. Parado, mostra o preco que
+    // vale: o da lista, ou o corrigido a mao se voce mexeu na etiqueta.
     if (drafts[item.id] !== undefined) return drafts[item.id];
-    return item.unitPrice != null ? item.unitPrice.toFixed(2).replace('.', ',') : '';
+    return item.price != null ? item.price.toFixed(2).replace('.', ',') : '';
   }
 
   async function commitPrice(item: TripItem) {
@@ -76,6 +77,8 @@ export default function Trip() {
     const parsed = raw.trim() === '' ? null : Number(raw.replace(',', '.'));
     if (parsed !== null && !Number.isFinite(parsed)) return;
     if (parsed === item.unitPrice) return;
+    // Digitar exatamente o preco da lista nao e correcao: nao vale uma escrita.
+    if (!item.corrected && parsed !== null && parsed === item.expected) return;
     await update(item, { unitPrice: parsed });
   }
 
@@ -145,7 +148,7 @@ export default function Trip() {
               <div className="value">{money(trip.spent)}</div>
             </div>
             <div className="stat">
-              <div className="label">Falta (est.)</div>
+              <div className="label">Falta pegar</div>
               <div className="value">{money(trip.remainingEstimate)}</div>
             </div>
           </div>
@@ -177,13 +180,10 @@ export default function Trip() {
             </div>
           )}
 
-          {progress.pickedWithoutPrice > 0 && (
-            <div className="banner warn" style={{ marginTop: 10, marginBottom: 0 }}>
-              <span>💰</span>
-              <span>
-                {progress.pickedWithoutPrice} {progress.pickedWithoutPrice === 1 ? 'item pego está' : 'itens pegos estão'} sem
-                preço — o total fica incompleto.
-              </span>
+          {progress.withoutPrice > 0 && (
+            <div className="small faint" style={{ marginTop: 10 }}>
+              {progress.withoutPrice} {progress.withoutPrice === 1 ? 'item foi escrito' : 'itens foram escritos'} à mão e não
+              {progress.withoutPrice === 1 ? ' entra' : ' entram'} na soma.
             </div>
           )}
         </div>
@@ -221,7 +221,7 @@ export default function Trip() {
                     <div className="name">{item.name}</div>
                     <div className="meta">
                       <span>{quantity(item.qty, item.unit)}</span>
-                      {item.expected != null && <span className="faint">~{money(item.expected)}</span>}
+                      {item.expected != null && <span className="faint">{money(item.expected)}</span>}
                     </div>
                   </div>
                 </div>
@@ -236,6 +236,9 @@ export default function Trip() {
               <span>✅ No carrinho</span>
               <span className="count right">{money(trip.spent)}</span>
             </div>
+            <p className="small faint" style={{ margin: '0 4px 8px' }}>
+              O preço já vem da lista. Só mexa no campo se a etiqueta estiver diferente.
+            </p>
             <div className="card">
               {picked.map((item) => (
                 <div className="item done" key={item.id}>
@@ -246,11 +249,8 @@ export default function Trip() {
                     <div className="name">{item.name}</div>
                     <div className="meta">
                       <span>{quantity(item.qty, item.unit)}</span>
-                      {item.subtotal != null ? (
-                        <strong className="money">{money(item.subtotal)}</strong>
-                      ) : (
-                        <span className="badge warn">falta o preço{item.expected != null ? ` (~${money(item.expected)})` : ''}</span>
-                      )}
+                      {item.subtotal != null && <strong className="money">{money(item.subtotal)}</strong>}
+                      {item.corrected && <span className="badge ok">preço corrigido</span>}
                       {item.pickedBy && <span style={{ color: item.pickedBy.color }}>{item.pickedBy.name}</span>}
                     </div>
                   </div>

@@ -2,7 +2,8 @@ import express from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { getCart, assertListInHousehold, assertTripInHousehold } from '../households.js';
-import { hydrate, fillMissingOffers, matchKey, priceStats } from '../catalog.js';
+import { hydrate, matchKey, priceStats } from '../catalog.js';
+import { priceFor } from '../snapshot.js';
 import { MARKET_BY_KEY } from '../markets/index.js';
 import { categoryOrder, categoryLabel } from '../categories.js';
 import { publish } from '../realtime.js';
@@ -34,8 +35,14 @@ function tripItems(tripId) {
       picked: !!r.picked,
       unitPrice: r.unit_price,
       pickedQty: r.picked_qty,
+      // "expected" e o preco gravado quando a lista foi montada.
       expected: r.expected,
-      subtotal: r.picked && r.unit_price != null ? round(r.unit_price * (r.picked_qty ?? r.qty)) : null,
+      // O preco que conta: o corrigido a mao, se houver, senao o da lista.
+      // Anotar preco no mercado e opcional -- o total ja fecha sem isso.
+      price: r.unit_price ?? r.expected,
+      corrected: r.unit_price != null,
+      subtotal:
+        (r.unit_price ?? r.expected) != null ? round((r.unit_price ?? r.expected) * (r.picked_qty ?? r.qty)) : null,
       pickedBy: r.picked_by ? { id: r.picked_by, name: r.picked_by_name, color: r.picked_by_color } : null,
       pickedAt: r.picked_at,
     }))
@@ -57,7 +64,9 @@ function tripPayload(trip) {
   const missing = items.filter((i) => !i.picked);
   const spent = round(picked.reduce((acc, i) => acc + (i.subtotal || 0), 0));
   const remainingEstimate = round(missing.reduce((acc, i) => acc + (i.expected || 0) * i.qty, 0));
-  const pickedWithoutPrice = picked.filter((i) => i.unitPrice == null).length;
+  // Itens sem preco nenhum sao os escritos a mao, que nunca tiveram produto
+  // vinculado. Nao e pendencia a cobrar: so nao entram na soma.
+  const withoutPrice = items.filter((i) => i.price == null).length;
 
   const byCategory = new Map();
   for (const item of missing) {
@@ -81,7 +90,7 @@ function tripPayload(trip) {
       missing: missing.length,
       complete: items.length > 0 && missing.length === 0,
       percent: items.length ? Math.round((picked.length / items.length) * 100) : 0,
-      pickedWithoutPrice,
+      withoutPrice,
     },
     missingByCategory: [...byCategory.values()].sort((a, b) => categoryOrder(a.key) - categoryOrder(b.key)),
     spent,
@@ -111,20 +120,15 @@ tripsRouter.post('/', async (req, res, next) => {
       .run(householdId, list.id, list.name, market, req.user.id);
     const tripId = info.lastInsertRowid;
 
-    // Preco esperado de cada item: o do mercado escolhido, senao o mais barato
-    // conhecido, senao o ultimo preco que a gente mesmo pagou.
+    // O preco vem do que ficou gravado na montagem da lista -- sem consultar
+    // mercado nenhum agora. Isso faz "cheguei no mercado" abrir na hora e
+    // funcionar com o sinal ruim que costuma ter dentro da loja.
     const insert = db.prepare(
       `INSERT INTO trip_items (trip_id, list_item_id, product_id, name, qty, unit, category, image_url, note, expected)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     for (const item of items) {
-      let expected = null;
-      if (item.product_id) {
-        const product = await fillMissingOffers(item.product_id).catch(() => hydrate(item.product_id));
-        const offer = market ? product?.offers.find((o) => o.market === market) : product?.cheapest;
-        expected = offer?.price ?? product?.cheapest?.price ?? null;
-      }
-      if (expected == null) expected = priceStats(matchKey({ name: item.name }))?.last ?? null;
+      const expected = priceFor(item, market) ?? priceStats(matchKey({ name: item.name }))?.last ?? null;
       insert.run(tripId, item.id, item.product_id, item.name, item.qty, item.unit, item.category, item.image_url, item.note, expected);
     }
 
@@ -277,6 +281,8 @@ tripsRouter.post('/:id/finish', (req, res, next) => {
       const items = db.prepare('SELECT * FROM trip_items WHERE trip_id = ?').all(trip.id);
 
       for (const item of items) {
+        // Guarda o preco corrigido a mao; o da lista ja veio do mercado e nao
+        // e informacao nova para o historico.
         if (item.picked && item.unit_price != null) {
           db.prepare(
             `INSERT INTO price_history (product_id, match_key, name, market, unit_price, trip_id)
