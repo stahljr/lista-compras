@@ -163,7 +163,7 @@ export default function Cart() {
             <button className="btn btn-block" onClick={() => navigate('/historico')}>
               Ver compras anteriores
             </button>
-            <button className="btn btn-ghost btn-block" onClick={() => navigate('/')}>
+            <button className="btn btn-ghost btn-block" onClick={() => navigate('/lista')}>
               Voltar para a lista
             </button>
           </div>
@@ -186,7 +186,7 @@ export default function Cart() {
             <div className="ico">🛒</div>
             <h3>Carrinho vazio</h3>
             <p>Ao chegar no mercado, abra a lista e toque em “Montar carrinho” para escolher o que levar.</p>
-            <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate('/')}>
+            <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate('/lista')}>
               Ir para a lista
             </button>
           </div>
@@ -389,8 +389,8 @@ export default function Cart() {
             >
               Adicionar
             </button>
-            <button className="btn btn-ghost btn-block" onClick={() => navigate('/buscar')}>
-              Buscar no catálogo em vez disso
+            <button className="btn btn-ghost btn-block" onClick={() => navigate('/')}>
+              Escolher no Mercado
             </button>
           </div>
         </Sheet>
@@ -447,7 +447,7 @@ export default function Cart() {
                 await api.post(`/trips/${trip.id}/cancel`);
                 setTrip(null);
                 setSheet(null);
-                navigate('/');
+                navigate('/lista');
               }}
             >
               Descartar este carrinho

@@ -8,6 +8,7 @@ import { listsRouter } from './routes/lists.js';
 import { tripsRouter } from './routes/trips.js';
 import { subscribe } from './realtime.js';
 import { startRefresher } from './refresher.js';
+import { ensureClassifierFresh } from './catalog.js';
 import './db.js';
 
 const app = express();
@@ -49,6 +50,13 @@ app.use((err, _req, res, _next) => {
 
 purgeExpiredSessions();
 setInterval(purgeExpiredSessions, 6 * 3600 * 1000).unref();
+
+// As regras de categoria mudam com o tempo; o catalogo ja gravado precisa
+// acompanhar, senao "molho de tomate" fica no corredor do hortifruti para
+// sempre.
+const reclass = ensureClassifierFresh();
+if (reclass) console.log(`[categorias] ${reclass.mudados} de ${reclass.total} produtos reclassificados`);
+
 startRefresher();
 
 app.listen(PORT, () => {

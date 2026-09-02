@@ -217,6 +217,20 @@ CREATE TABLE IF NOT EXISTS trip_item_sources (
 CREATE INDEX IF NOT EXISTS idx_trip_item_sources_item ON trip_item_sources(trip_item_id);
 `);
 
+// Chave/valor para controle interno (versao do classificador, por exemplo).
+db.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+
+export function metaGet(key) {
+  return db.prepare('SELECT value FROM meta WHERE key = ?').get(key)?.value ?? null;
+}
+
+export function metaSet(key, value) {
+  db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(
+    key,
+    String(value),
+  );
+}
+
 export function nowIso() {
   return new Date().toISOString().replace('T', ' ').slice(0, 19);
 }

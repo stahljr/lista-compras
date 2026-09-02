@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useStore } from '../lib/store';
 import { money } from '../lib/format';
 import { ListItemRow } from '../components/ListItemRow';
 import { Sheet } from '../components/Sheet';
-import type { ListItem, ShoppingList, Trip } from '../lib/types';
+import { Thumb } from '../components/Thumb';
+import type { ListItem, Product, ShoppingList, Trip } from '../lib/types';
 
 /**
  * A lista geral: e aqui que se anota o que precisa comprar. Nao e o carrinho --
@@ -16,6 +17,10 @@ export default function List() {
   const { general, setGeneral, lists, categories, markets, trip, setTrip, refreshLists } = useStore();
   const navigate = useNavigate();
   const [quick, setQuick] = useState('');
+  const [sugestoes, setSugestoes] = useState<Product[]>([]);
+  const [buscando, setBuscando] = useState(false);
+  const [mostrarSugestoes, setMostrarSugestoes] = useState(false);
+  const debounce = useRef<number | undefined>(undefined);
   const [sheet, setSheet] = useState<'build' | 'save' | 'clear' | null>(null);
   const [chosen, setChosen] = useState<number[]>([]);
   const [saveName, setSaveName] = useState('');
@@ -47,6 +52,27 @@ export default function List() {
     }));
   }, [general, categories]);
 
+  // Digitar "detergente" tem de mostrar os detergentes dos mercados, com
+  // preco, e nao gravar a palavra crua -- item sem produto vinculado nao entra
+  // na comparacao de preco nem leva foto.
+  useEffect(() => {
+    window.clearTimeout(debounce.current);
+    const termo = quick.trim();
+    if (termo.length < 2) {
+      setSugestoes([]);
+      return;
+    }
+    debounce.current = window.setTimeout(() => {
+      setBuscando(true);
+      void api
+        .get<{ products: Product[] }>(`/catalog/search?q=${encodeURIComponent(termo)}&limit=8`)
+        .then((d) => setSugestoes(d.products))
+        .catch(() => setSugestoes([]))
+        .finally(() => setBuscando(false));
+    }, 400);
+    return () => window.clearTimeout(debounce.current);
+  }, [quick]);
+
   async function act(promise: Promise<{ list: ShoppingList }>) {
     setError('');
     try {
@@ -56,11 +82,24 @@ export default function List() {
     }
   }
 
-  async function addQuick(event: React.FormEvent) {
-    event.preventDefault();
+  function limparBusca() {
+    setQuick('');
+    setSugestoes([]);
+    setMostrarSugestoes(false);
+  }
+
+  /** Item do catalogo: leva foto, categoria e o preco de cada mercado. */
+  async function addProduto(product: Product) {
+    limparBusca();
+    await act(api.post<{ list: ShoppingList }>('/lists/geral/items', { productId: product.id, qty: 1 }));
+  }
+
+  /** Escrito a mao: para o que nao existe no catalogo (papel toalha, gelo...). */
+  async function addTexto(event?: React.FormEvent) {
+    event?.preventDefault();
     const name = quick.trim();
     if (!name) return;
-    setQuick('');
+    limparBusca();
     await act(api.post<{ list: ShoppingList }>('/lists/geral/items', { name }));
   }
 
@@ -112,14 +151,55 @@ export default function List() {
       </header>
 
       <main className="page">
-        <form className="searchbar" onSubmit={addQuick} style={{ marginBottom: 12 }}>
-          <input
-            className="input"
-            placeholder="Preciso comprar…"
-            value={quick}
-            onChange={(e) => setQuick(e.target.value)}
-            enterKeyHint="done"
-          />
+        <form className="searchbar" onSubmit={addTexto} style={{ marginBottom: 12 }}>
+          <div className="campo-com-sugestao">
+            <input
+              className="input"
+              placeholder="Preciso comprar…"
+              value={quick}
+              onChange={(e) => {
+                setQuick(e.target.value);
+                setMostrarSugestoes(true);
+              }}
+              onFocus={() => setMostrarSugestoes(true)}
+              // O clique numa sugestao precisa acontecer antes de o painel
+              // fechar; por isso o atraso no blur.
+              onBlur={() => window.setTimeout(() => setMostrarSugestoes(false), 180)}
+              enterKeyHint="done"
+              autoComplete="off"
+            />
+
+            {mostrarSugestoes && quick.trim().length >= 2 && (sugestoes.length > 0 || buscando) && (
+              <div className="sugestoes">
+                {sugestoes.map((p) => (
+                  <button type="button" className="sugestao" key={p.id} onClick={() => void addProduto(p)}>
+                    <Thumb src={p.imageUrl} category={p.category} alt={p.name} />
+                    <span className="info">
+                      <span className="nome">{p.name}</span>
+                      <span className="det">
+                        {p.cheapest ? `${p.cheapest.marketLabel}${p.marketsCount > 1 ? ` · +${p.marketsCount - 1}` : ''}` : 'sem preço'}
+                      </span>
+                    </span>
+                    {p.cheapest && <span className="preco">{money(p.cheapest.price)}</span>}
+                  </button>
+                ))}
+                {buscando && sugestoes.length === 0 && (
+                  <span className="sugestao det" style={{ color: 'var(--muted)' }}>
+                    procurando nos mercados…
+                  </span>
+                )}
+                <button type="button" className="sugestao" onClick={() => void addTexto()}>
+                  <span className="thumb thumb-fallback" aria-hidden="true">
+                    ✏️
+                  </span>
+                  <span className="info">
+                    <span className="nome">Anotar “{quick.trim()}” à mão</span>
+                    <span className="det">sem produto do mercado, então sem preço</span>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
           <button className="btn btn-primary" disabled={!quick.trim()}>
             Add
           </button>
@@ -154,10 +234,12 @@ export default function List() {
           <div className="empty">
             <div className="ico">📝</div>
             <h3>A lista está vazia</h3>
-            <p>Anote acima o que precisa comprar, busque nos mercados ou puxe uma lista rápida.</p>
+            <p>
+              Anote acima — o app sugere o produto dos mercados com preço. Ou escolha olhando as prateleiras no Mercado.
+            </p>
             <div className="btn-row" style={{ marginTop: 16, maxWidth: 320, marginInline: 'auto' }}>
-              <button className="btn" onClick={() => navigate('/buscar')}>
-                🔍 Buscar
+              <button className="btn" onClick={() => navigate('/')}>
+                🏪 Mercado
               </button>
               <button className="btn" onClick={() => navigate('/listas')}>
                 📋 Listas

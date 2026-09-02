@@ -1,5 +1,5 @@
-import { db } from './db.js';
-import { fold, classify } from './categories.js';
+import { db, metaGet, metaSet } from './db.js';
+import { fold, classify, CATEGORIES } from './categories.js';
 import { MARKETS, MARKET_BY_KEY, acrossMarkets } from './markets/index.js';
 
 const SEARCH_TTL_MINUTES = Number(process.env.SEARCH_TTL_MINUTES || 360);
@@ -167,19 +167,47 @@ export async function unifiedSearch(term, { limit = 24, fresh = false } = {}) {
     }
   }
 
-  const products = [...ranking.entries()]
-    .sort((a, b) => b[1].hits - a[1].hits || b[1].score - a[1].score)
-    .slice(0, limit)
-    .map(([id]) => hydrate(id))
-    .filter(Boolean);
+  // Ordenar por numero de mercados primeiro era errado: "Detergente
+  // Concentrado Ypê 406g" e "Detergente Concentrado Ypê 416g" sao EANs
+  // diferentes, entao cada um aparece num mercado so e perdia para qualquer
+  // produto presente em tres -- mesmo um cujo nome nao tem nada a ver com a
+  // busca, porque a busca da VTEX tambem casa categoria e descricao.
+  // Agora manda a relevancia: a posicao que cada mercado deu ao produto e,
+  // sobretudo, se o nome dele contem o que foi digitado. Estar em varios
+  // mercados vira um empurrao pequeno, para desempate.
+  // Quem digita "detergente concentrado ype" espera, antes de tudo, os produtos
+  // cujo nome tem as tres palavras. Entao o casamento do nome e o criterio
+  // primario, e nao um peso somado -- somar deixava um produto presente em tres
+  // mercados na frente de outro que casava o nome inteiro, porque a relevancia
+  // se acumulava por mercado.
+  // Dentro do mesmo grau de casamento, decide a posicao que o melhor mercado
+  // deu ao produto e, por ultimo, estar em mais lojas.
+  const palavras = normalized.split(' ').filter((w) => w.length > 2);
+  const candidates = [];
+  for (const [id, entry] of ranking) {
+    const product = hydrate(id);
+    // Sem preco em nenhum mercado o produto nao serve para nada aqui: nao da
+    // para comparar, nao entra na estimativa da lista.
+    if (!product || !product.marketsCount) continue;
+    const nome = fold(product.name);
+    const casadas = palavras.filter((w) => nome.includes(w)).length;
+    const match = palavras.length ? casadas / palavras.length : 1;
+    candidates.push({ product, match: Math.round(match * 20) / 20, best: entry.best, hits: entry.hits });
+  }
+  candidates.sort((a, b) => b.match - a.match || b.best - a.best || b.hits - a.hits);
+  const products = candidates.slice(0, limit).map((c) => c.product);
 
   return { products, failed, cachedMarkets: usedCache };
 }
 
+/**
+ * Guarda a melhor posicao que algum mercado deu ao produto -- a melhor, nao a
+ * soma: somar era o mesmo que ordenar por numero de mercados de novo.
+ */
 function rank(ranking, id, index) {
-  const entry = ranking.get(id) || { hits: 0, score: 0 };
+  const entry = ranking.get(id) || { hits: 0, best: 0 };
   entry.hits += 1;
-  entry.score += 1 / (index + 1);
+  entry.best = Math.max(entry.best, 1 / (index + 1));
   ranking.set(id, entry);
 }
 
@@ -251,6 +279,62 @@ export function productsByCategory(category, { limit = 60, offset = 0 } = {}) {
     )
     .all(category, limit, offset);
   return rows.map((r) => hydrate(r.id)).filter(Boolean);
+}
+
+/**
+ * As prateleiras da home: cada categoria com alguns produtos, numa consulta so.
+ * Sem isso a tela inicial faria uma chamada por categoria.
+ */
+export function shelves({ perCategory = 10 } = {}) {
+  const counts = new Map(categoryCounts().map((c) => [c.category, c.total]));
+  return CATEGORIES.filter((c) => counts.get(c.key))
+    .map((c) => ({
+      key: c.key,
+      label: c.label,
+      emoji: c.emoji,
+      total: counts.get(c.key),
+      products: productsByCategory(c.key, { limit: perCategory }),
+    }))
+    .filter((c) => c.products.length);
+}
+
+// Suba este numero ao mexer nas regras de categoria: a categoria fica gravada
+// no produto, entao corrigir a regra nao arruma sozinho o que ja foi salvo.
+const CLASSIFIER_VERSION = 3;
+
+/**
+ * Reclassifica o catalogo com as regras atuais. Usa a categoria que o mercado
+ * informou (guardada na oferta) mais o nome, do mesmo jeito que na entrada.
+ */
+export function reclassifyAll() {
+  const rows = db
+    .prepare(
+      `SELECT p.id, p.name, p.category,
+              (SELECT o.category FROM offers o WHERE o.product_id = p.id AND o.category IS NOT NULL LIMIT 1) AS raw
+         FROM products p`,
+    )
+    .all();
+  const update = db.prepare('UPDATE products SET category = ? WHERE id = ?');
+  let mudados = 0;
+  const run = db.transaction(() => {
+    for (const row of rows) {
+      const nova = classify(row.raw || '', row.name);
+      if (nova !== row.category) {
+        update.run(nova, row.id);
+        mudados++;
+      }
+    }
+  });
+  run();
+  return { total: rows.length, mudados };
+}
+
+/** Roda a reclassificacao uma vez quando as regras mudam de versao. */
+export function ensureClassifierFresh() {
+  if (Number(metaGet('classifier') || 0) >= CLASSIFIER_VERSION) return null;
+  const r = reclassifyAll();
+  metaSet('classifier', CLASSIFIER_VERSION);
+  return r;
 }
 
 /** Media e ultimo preco realmente pago, por item. Usado para estimar a compra. */

@@ -10,7 +10,7 @@
 # O --ha=false nao e opcional aqui: por padrao a Fly sobe duas maquinas para
 # redundancia, e duas maquinas nao montam o mesmo volume nem compartilham um
 # arquivo SQLite.
-app = 'lista-compras'
+app = 'lista-compras-quiet-paper-3911'
 primary_region = 'gru'
 
 [build]

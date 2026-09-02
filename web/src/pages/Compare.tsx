@@ -80,7 +80,7 @@ export default function Compare() {
             <div className="ico">💰</div>
             <h3>Nenhum item com preço</h3>
             <p>Itens escritos à mão não têm preço. Busque os produtos no catálogo para poder comparar.</p>
-            <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate('/buscar')}>
+            <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate('/')}>
               Buscar produtos
             </button>
           </div>

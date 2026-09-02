@@ -1,5 +1,5 @@
 import express from 'express';
-import { unifiedSearch, categoryCounts, productsByCategory, hydrate, fillMissingOffers, priceStats } from '../catalog.js';
+import { unifiedSearch, categoryCounts, productsByCategory, shelves, hydrate, fillMissingOffers, priceStats } from '../catalog.js';
 import { CATEGORIES } from '../categories.js';
 import { marketInfo } from '../markets/index.js';
 
@@ -27,6 +27,11 @@ catalogRouter.get('/categories', (_req, res) => {
   res.json({
     categories: CATEGORIES.map((c) => ({ ...c, total: counts.get(c.key) || 0 })),
   });
+});
+
+/** Home no estilo mercado: as categorias com uma amostra de cada. */
+catalogRouter.get('/shelves', (req, res) => {
+  res.json({ shelves: shelves({ perCategory: Math.min(Number(req.query.perCategory) || 10, 20) }) });
 });
 
 catalogRouter.get('/categories/:key', (req, res) => {

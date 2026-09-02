@@ -54,20 +54,50 @@ const RULES = [
   ['matinais', /matinais|cafe\b|cafes|capuccino|cappuccino|cereal|cereais|granola|aveia|achocolatado|nescau|toddy|leite em po|ninho|geleia|mel\b|torrada|biscoito de agua|cha\b|chas\b|adocante/],
   ['congelados', /congelad|sorvete|acai|pizza congelada|nuggets|hamburguer congelado|batata frita congelada|polpa de fruta|empanado|lasanha congelada|gelo\b/],
   ['bebidas', /bebidas|refrigerante|cerveja|vinho|suco|agua mineral|energetico|isotonico|whisky|vodka|cachaca|gin\b|espumante|destilado|tonica|guarana|coca.?cola|pepsi|heineken|brahma|skol|antarctica/],
-  ['doces', /doces|snacks|chocolate|bombom|bala\b|chiclete|pirulito|salgadinho|batata chips|biscoito|bolacha|wafer|amendoim|castanha|pipoca|pacoca|brigadeiro|sobremesa|gelatina|pudim|leite condensado|doce de leite/],
+  ['doces', /doces|snacks|passas?\b|chocolate|bombom|bala\b|chiclete|pirulito|salgadinho|batata chips|biscoito|bolacha|wafer|amendoim|castanha|pipoca|pacoca|brigadeiro|sobremesa|gelatina|pudim|leite condensado|doce de leite/],
   ['mercearia', /mercearia|alimentos basicos|arroz|feijao|macarrao|massa\b|massas|molho de tomate|extrato de tomate|oleo\b|azeite|vinagre|sal\b|acucar|farinha|fuba|amido|temperos|condimento|maionese|ketchup|mostarda|conservas|atum|sardinha|milho verde|ervilha|azeitona|palmito|leite de coco|caldo\b|sopa\b|proteina de soja|granel|enlatado|mantimento/],
   ['casa', /casa|bazar|utilidades|utilidade domestica|panela|prato|copo\b|talher|louca|papelaria|eletro|lampada|pilha|bateria|ferramenta|jardim|churrasco|carvao|guardanapo|papel toalha|filme plastico|papel aluminio|pote|garrafa termica|brinquedo|vestuario|cama mesa|banho|toalha/],
 ];
 
-/**
- * Classifica um produto na categoria da casa.
- * Tenta primeiro a categoria que o mercado informou (mais confiavel) e,
- * se nada casar, cai para o nome do produto.
- */
+// Os nomes dos produtos estao cheios de palavras que pertencem a outro
+// corredor: "Molho de Tomate sabor Pizza", "Maionese sabor Bacon", "Leite em
+// Po". Uma regra generica de uma palavra (leite, bacon, pizza, tomate) casa
+// antes da especifica e manda o produto para o lugar errado.
+//
+// Por isso os termos compostos, que quase nao erram, sao testados primeiro --
+// antes das regras genericas e antes mesmo da categoria que a loja informou.
+const ESPECIFICOS = [
+  ['doces', /leite condensado|doce de leite|leite ninho.*(bolo|trufa)/],
+  ['matinais', /leite em po|cafe (soluvel|torrado|em capsula|em graos)|achocolatado|cereal matinal|granola|aveia em/],
+  ['mercearia', /leite de coco|molho (de )?tomate|extrato (de )?tomate|molho ingles|molho shoyu|maionese|ketchup|mostarda|azeitona|palmito|atum|sardinha em|milho verde em conserva|ervilha em conserva|creme de cebola/],
+  ['bebidas', /suco (de|em)|refrigerante|agua mineral|agua com gas|cerveja|energetico|isotonico/],
+  ['limpeza', /lava.?loucas|lava.?roupas|sabao (em po|liquido|de coco)|agua sanitaria|amaciante/],
+  ['higiene', /papel higienico|creme dental|escova de dente|sabonete|shampoo|condicionador/],
+];
+
+// Marcas de produto processado. Servem para nao confundir o legume com o que
+// e feito dele: "molho de tomate" e "batata frita congelada" trazem a palavra
+// do hortifruti no nome, e a regra de hortifruti disparava antes das outras.
+const PROCESSADO = /molho|extrato|polpa|suco|sopa|caldo|pure|geleia|chips|palha|frita|congelad|desidratad|em po\b|passas?\b|seco\b|conserva|enlatad|refogad/;
+
+// Congelado ganha de basico de mercearia -- mas so quando a palavra indica o
+// produto, e nao um sabor: "Molho de Tomate sabor Pizza" nao e congelado.
+const CONGELADO = /congelad|nuggets|empanad|sorvete|\bacai\b|batata frita|pizza (pronta|inteira)|lasanha (pronta|tradicional)/;
+
+// Basico de mercearia. Vem antes da categoria que a loja informou: o feijao a
+// vacuo que o mercado guarda no hortifruti continua sendo procurado na
+// mercearia.
+const BASICO = /\b(arroz|feijao|macarrao|espaguete|acucar|farinha|fuba|amido|azeite|vinagre)\b|oleo de soja|sal refinado/;
+
 export function classify(rawCategory, productName) {
   const cat = fold(rawCategory);
   const name = fold(productName);
+  for (const [key, re] of ESPECIFICOS) if (re.test(name)) return key;
+  if (BASICO.test(name) && !CONGELADO.test(name)) return 'mercearia';
   for (const [key, re] of RULES) if (re.test(cat)) return key;
-  for (const [key, re] of RULES) if (re.test(name)) return key;
+  for (const [key, re] of RULES) {
+    if (key === 'hortifruti' && PROCESSADO.test(name)) continue;
+    if (re.test(name)) return key;
+  }
   return 'outros';
 }

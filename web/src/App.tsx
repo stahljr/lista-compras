@@ -2,7 +2,7 @@ import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { useStore } from './lib/store';
 import Login from './pages/Login';
 import List from './pages/List';
-import Search from './pages/Search';
+import Market from './pages/Market';
 import Lists from './pages/Lists';
 import ListDetail from './pages/ListDetail';
 import Cart from './pages/Cart';
@@ -29,8 +29,8 @@ export default function App() {
   return (
     <div className="app">
       <Routes>
-        <Route path="/" element={<List />} />
-        <Route path="/buscar" element={<Search />} />
+        <Route path="/" element={<Market />} />
+        <Route path="/lista" element={<List />} />
         <Route path="/listas" element={<Lists />} />
         <Route path="/listas/:id" element={<ListDetail />} />
         <Route path="/comparar" element={<Compare />} />
@@ -45,13 +45,13 @@ export default function App() {
 
       <nav className="tabbar">
         <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>
+          <span className="ico">🏪</span>
+          Mercado
+        </NavLink>
+        <NavLink to="/lista" className={({ isActive }) => (isActive ? 'active' : '')}>
           <span className="ico">📝</span>
           Lista
           {listCount > 0 && <span className="dot">{listCount}</span>}
-        </NavLink>
-        <NavLink to="/buscar" className={({ isActive }) => (isActive ? 'active' : '')}>
-          <span className="ico">🔍</span>
-          Buscar
         </NavLink>
         <NavLink to="/listas" className={({ isActive }) => (isActive ? 'active' : '')}>
           <span className="ico">📋</span>
