@@ -80,13 +80,17 @@ CREATE TABLE IF NOT EXISTS search_cache (
 );
 
 -- ------------------------------------------------------------------ listas
--- kind: 'cart'     -> o carrinho da semana (um por household)
---       'template' -> lista pronta reutilizavel (limpeza, churrasco, ...)
+-- Toda lista e preparacao: e nela que se anota o que precisa comprar.
+-- kind: 'general' -> a lista geral, uma por casa, para a proxima compra
+--       'quick'   -> lista nomeada (limpeza, churrasco, o que faltou...)
+-- reusable: lista rapida cadastrada continua existindo depois de usada; a
+-- lista geral e as de sobra sao de uso unico e o carrinho as consome.
 CREATE TABLE IF NOT EXISTS lists (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   household_id INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,
   name         TEXT NOT NULL,
-  kind         TEXT NOT NULL DEFAULT 'template',
+  kind         TEXT NOT NULL DEFAULT 'quick',
+  reusable     INTEGER NOT NULL DEFAULT 1,
   emoji        TEXT NOT NULL DEFAULT '🛒',
   archived     INTEGER NOT NULL DEFAULT 0,
   created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -177,6 +181,30 @@ function addColumn(table, column, definition) {
 // app saia consultando preco novo -- a decisao de onde comprar ja foi tomada.
 addColumn('list_items', 'price_snapshot', 'TEXT');
 addColumn('list_items', 'snapshot_at', 'TEXT');
+addColumn('lists', 'reusable', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('trip_items', 'source_list_id', 'INTEGER');
+
+// Nomes antigos: o "carrinho" era uma lista, antes de o carrinho passar a ser
+// a ida ao mercado montada a partir de uma ou mais listas.
+db.exec(`
+  UPDATE lists SET kind = 'general', reusable = 0 WHERE kind = 'cart';
+  UPDATE lists SET kind = 'quick'                 WHERE kind = 'template';
+  UPDATE lists SET reusable = 0 WHERE kind = 'general';
+  UPDATE lists SET name = 'Lista geral', emoji = '📝' WHERE kind = 'general' AND name = 'Carrinho';
+`);
+
+// Um carrinho e montado de uma ou mais listas, e guarda de quais veio: no
+// fecho e isso que diz o que consumir e o que deixar cadastrado.
+db.exec(`
+CREATE TABLE IF NOT EXISTS trip_lists (
+  trip_id   INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  list_id   INTEGER REFERENCES lists(id) ON DELETE SET NULL,
+  list_name TEXT NOT NULL,
+  kind      TEXT NOT NULL DEFAULT 'quick',
+  reusable  INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (trip_id, list_id)
+);
+`);
 
 export function nowIso() {
   return new Date().toISOString().replace('T', ' ').slice(0, 19);

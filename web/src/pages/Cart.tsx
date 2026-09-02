@@ -1,269 +1,456 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
+import { api, semRede } from '../lib/api';
+import { enfileirar } from '../lib/offline';
+import { aplicarPatch } from '../lib/tripLocal';
 import { useStore } from '../lib/store';
-import { money } from '../lib/format';
-import { ListItemRow } from '../components/ListItemRow';
+import { money, quantity } from '../lib/format';
+import { Thumb } from '../components/Thumb';
 import { Sheet } from '../components/Sheet';
-import type { ListItem, ShoppingList, Trip } from '../lib/types';
+import type { FinishResult, ListSummary, Trip as TripType, TripItem } from '../lib/types';
 
+/**
+ * O carrinho: a lista de conferencia do mercado. Montado de uma ou mais
+ * listas, aqui so se marca o que foi pego -- e, se a etiqueta estiver
+ * diferente, corrige o preco.
+ */
 export default function Cart() {
-  const { cart, setCart, categories, markets, trip, setTrip, refreshLists } = useStore();
+  const { trip, setTrip, refreshGeneral, refreshLists, lists, categories, user, online, pendingWrites, notePendingWrite } = useStore();
   const navigate = useNavigate();
-  const [quick, setQuick] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [sheet, setSheet] = useState<'market' | 'save' | 'clear' | null>(null);
-  const [saveName, setSaveName] = useState('');
+  const [sheet, setSheet] = useState<'finish' | 'add' | 'addList' | null>(null);
+  const [result, setResult] = useState<FinishResult | null>(null);
+  const [focusPrice, setFocusPrice] = useState<number | null>(null);
+  const [drafts, setDrafts] = useState<Record<number, string>>({});
+  const [newItem, setNewItem] = useState('');
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  // O total que a compra vai usar: soma do preco congelado de cada item, no
-  // mercado mais barato conhecido. Comparar refina isso escolhendo um mercado.
-  const planned = useMemo(() => {
-    let total = 0;
-    let semPreco = 0;
-    for (const item of cart?.items || []) {
-      const valores = Object.values(item.priceSnapshot || {}).filter((v) => v > 0);
-      if (!valores.length) semPreco++;
-      else total += Math.min(...valores) * item.qty;
-    }
-    return { total: Math.round(total * 100) / 100, semPreco };
-  }, [cart]);
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, ListItem[]>();
-    for (const item of cart?.items || []) {
+  const groups = useMemo(() => {
+    if (!trip) return [];
+    const pending = trip.items.filter((i) => !i.picked);
+    const map = new Map<string, TripItem[]>();
+    for (const item of pending) {
       if (!map.has(item.category)) map.set(item.category, []);
       map.get(item.category)!.push(item);
     }
     return [...map.entries()].map(([key, items]) => ({
       key,
-      label: categories.find((c) => c.key === key)?.label || 'Outros',
+      label: categories.find((c) => c.key === key)?.label || items[0].categoryLabel,
       emoji: categories.find((c) => c.key === key)?.emoji || '📦',
       items,
     }));
-  }, [cart, categories]);
+  }, [trip, categories]);
 
-  async function act<T extends { list: ShoppingList }>(promise: Promise<T>) {
+  const picked = trip?.items.filter((i) => i.picked) ?? [];
+
+  async function update(item: TripItem, patch: { picked?: boolean; unitPrice?: number | null }) {
+    if (!trip) return;
     setError('');
+    const anterior = trip;
+    // Marca na tela na hora: no corredor do mercado a resposta tem de ser
+    // imediata, e o servidor confirma em seguida.
+    setTrip(aplicarPatch(trip, item.id, patch, user ? { id: user.id, name: user.name, color: user.color } : null));
     try {
-      const data = await promise;
-      setCart(data.list);
+      const { trip: updated } = await api.patch<{ trip: TripType }>(`/trips/${trip.id}/items/${item.id}`, patch);
+      setTrip(updated);
     } catch (err) {
+      if (semRede(err)) {
+        // Sem sinal: a marcacao fica na fila e sobe quando a rede voltar.
+        enfileirar('PATCH', `/trips/${trip.id}/items/${item.id}`, patch);
+        notePendingWrite();
+        return;
+      }
+      setTrip(anterior);
       setError(err instanceof Error ? err.message : 'não deu para salvar');
     }
   }
 
-  async function addQuick(event: React.FormEvent) {
-    event.preventDefault();
-    const name = quick.trim();
-    if (!name) return;
-    setQuick('');
-    await act(api.post<{ list: ShoppingList }>('/lists/cart/items', { name }));
+  function priceValue(item: TripItem) {
+    // Enquanto digita, mostra o que foi digitado. Parado, mostra o preco que
+    // vale: o da lista, ou o corrigido a mao se voce mexeu na etiqueta.
+    if (drafts[item.id] !== undefined) return drafts[item.id];
+    return item.price != null ? item.price.toFixed(2).replace('.', ',') : '';
   }
 
-  async function startTrip(market: string | null) {
+  async function commitPrice(item: TripItem) {
+    const raw = drafts[item.id];
+    if (raw === undefined) return;
+    setDrafts((prev) => {
+      const next = { ...prev };
+      delete next[item.id];
+      return next;
+    });
+    const parsed = raw.trim() === '' ? null : Number(raw.replace(',', '.'));
+    if (parsed !== null && !Number.isFinite(parsed)) return;
+    if (parsed === item.unitPrice) return;
+    // Digitar exatamente o preco da lista nao e correcao: nao vale uma escrita.
+    if (!item.corrected && parsed !== null && parsed === item.expected) return;
+    await update(item, { unitPrice: parsed });
+  }
+
+  async function finish() {
+    if (!trip) return;
     setBusy(true);
-    setError('');
     try {
-      const { trip: started } = await api.post<{ trip: Trip }>('/trips', { market });
-      setTrip(started);
+      const data = await api.post<FinishResult>(`/trips/${trip.id}/finish`);
+      setTrip(null);
+      await Promise.all([refreshGeneral(), refreshLists()]);
+      // Mostra o resultado antes de sair: pegamos tudo, ou o que sobrou e
+      // para onde foi.
+      setResult(data);
       setSheet(null);
-      navigate('/compra');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'não deu para iniciar a compra');
+      setError(err instanceof Error ? err.message : 'não deu para fechar o carrinho');
     } finally {
       setBusy(false);
     }
   }
 
-  const count = cart?.items.length ?? 0;
+  async function addList(list: ListSummary) {
+    if (!trip) return;
+    setError('');
+    try {
+      const { trip: updated } = await api.post<{ trip: TripType }>(`/trips/${trip.id}/add-list`, { listId: list.id });
+      setTrip(updated);
+      await refreshLists();
+      setSheet(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'não deu para adicionar a lista');
+    }
+  }
+
+  if (result) {
+    const { complete, leftover, trip: fechado } = result;
+    return (
+      <>
+        <header className="topbar">
+          <div className="grow">
+            <h1>{complete ? 'Pegamos tudo' : 'Faltou coisa'}</h1>
+            <p className="sub">
+              {fechado.marketLabel ? `${fechado.marketLabel} · ` : ''}
+              {money(fechado.spent)}
+            </p>
+          </div>
+        </header>
+        <main className="page">
+          <div className="card card-pad">
+            <div style={{ textAlign: 'center', padding: '10px 0 4px' }}>
+              <div style={{ fontSize: 44 }}>{complete ? '🎉' : '🔁'}</div>
+              <h3 style={{ margin: '10px 0 6px' }}>
+                {complete
+                  ? `Tudo no carrinho — ${money(fechado.spent)}`
+                  : `${fechado.progress.picked} de ${fechado.progress.total} itens`}
+              </h3>
+              {complete ? (
+                <p className="muted" style={{ margin: 0 }}>
+                  Nada ficou para trás.
+                </p>
+              ) : (
+                <p className="muted" style={{ margin: 0 }}>
+                  Os {fechado.progress.missing} que faltaram viraram a lista{' '}
+                  <strong>{leftover?.name}</strong> — pronta para outro mercado ou outro dia.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="stack" style={{ marginTop: 16 }}>
+            {leftover && (
+              <button className="btn btn-primary btn-block btn-lg" onClick={() => navigate(`/listas/${leftover.id}`)}>
+                Abrir “{leftover.name}”
+              </button>
+            )}
+            <button className="btn btn-block" onClick={() => navigate('/historico')}>
+              Ver compras anteriores
+            </button>
+            <button className="btn btn-ghost btn-block" onClick={() => navigate('/')}>
+              Voltar para a lista
+            </button>
+          </div>
+        </main>
+      </>
+    );
+  }
+
+  if (!trip) {
+    return (
+      <>
+        <header className="topbar">
+          <div className="grow">
+            <h1>Carrinho</h1>
+            <p className="sub">nenhum carrinho em andamento</p>
+          </div>
+        </header>
+        <main className="page">
+          <div className="empty">
+            <div className="ico">🛒</div>
+            <h3>Carrinho vazio</h3>
+            <p>Ao chegar no mercado, abra a lista e toque em “Montar carrinho” para escolher o que levar.</p>
+            <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate('/')}>
+              Ir para a lista
+            </button>
+          </div>
+        </main>
+      </>
+    );
+  }
+
+  const { progress } = trip;
 
   return (
     <>
       <header className="topbar">
         <div className="grow">
-          <h1>Carrinho</h1>
+          <h1>{trip.marketLabel || 'Compra'}</h1>
           <p className="sub">
-            {count === 0
-              ? 'vazio por enquanto'
-              : `${count} ${count === 1 ? 'item' : 'itens'}${planned.total > 0 ? ` · ≈ ${money(planned.total)}` : ''}`}
+            {progress.picked} de {progress.total} pegos · {trip.lists.map((l) => l.name).join(' + ') || trip.listName}
           </p>
         </div>
-        {count > 0 && (
-          <button className="btn btn-sm" onClick={() => setSheet('save')}>
-            Salvar
-          </button>
-        )}
+        <button className="btn btn-sm btn-primary" onClick={() => setSheet('finish')}>
+          Fechar
+        </button>
       </header>
 
       <main className="page">
-        <form className="searchbar" onSubmit={addQuick} style={{ marginBottom: 12 }}>
-          <input
-            className="input"
-            placeholder="Escrever um item…"
-            value={quick}
-            onChange={(e) => setQuick(e.target.value)}
-            enterKeyHint="done"
-          />
-          <button className="btn btn-primary" disabled={!quick.trim()}>
-            Add
-          </button>
-        </form>
+        <div className="card card-pad">
+          <div className="progress" style={{ marginBottom: 12 }}>
+            <div style={{ width: `${progress.percent}%` }} />
+          </div>
+          <div className="stat-row">
+            <div className="stat spent">
+              <div className="label">Gasto</div>
+              <div className="value">{money(trip.spent)}</div>
+            </div>
+            <div className="stat">
+              <div className="label">Falta pegar</div>
+              <div className="value">{money(trip.remainingEstimate)}</div>
+            </div>
+          </div>
+
+          {progress.complete ? (
+            <div className="banner ok" style={{ marginTop: 12, marginBottom: 0 }}>
+              <span>🎉</span>
+              <span>
+                <strong>Pegamos tudo!</strong> Total de {money(trip.spent)}. Toque em “Encerrar” para fechar a compra.
+              </span>
+            </div>
+          ) : (
+            <div className="banner info" style={{ marginTop: 12, marginBottom: 0 }}>
+              <span>📝</span>
+              <span>
+                Ainda faltam <strong>{progress.missing}</strong> {progress.missing === 1 ? 'item' : 'itens'}
+                {groups.length > 1 ? ` em ${groups.length} seções` : ''}.
+              </span>
+            </div>
+          )}
+
+          {pendingWrites > 0 && (
+            <div className="banner warn" style={{ marginTop: 10, marginBottom: 0 }}>
+              <span>📶</span>
+              <span>
+                {pendingWrites} {pendingWrites === 1 ? 'marcação salva' : 'marcações salvas'} só neste aparelho
+                {online ? ' — enviando…' : ' — sobem quando o sinal voltar'}.
+              </span>
+            </div>
+          )}
+
+          {progress.withoutPrice > 0 && (
+            <div className="small faint" style={{ marginTop: 10 }}>
+              {progress.withoutPrice} {progress.withoutPrice === 1 ? 'item foi escrito' : 'itens foram escritos'} à mão e não
+              {progress.withoutPrice === 1 ? ' entra' : ' entram'} na soma.
+            </div>
+          )}
+        </div>
 
         {error && (
-          <div className="banner danger">
+          <div className="banner danger" style={{ marginTop: 12 }}>
             <span>⚠️</span>
             <span>{error}</span>
           </div>
         )}
 
-        {trip && (
-          <div className="card card-pad" style={{ marginBottom: 12 }}>
-            <div className="row">
-              <span style={{ fontSize: 22 }}>🛍️</span>
-              <div className="grow">
-                <strong>Compra em andamento</strong>
-                <div className="small muted">
-                  {trip.marketLabel ? `${trip.marketLabel} · ` : ''}
-                  {trip.progress.picked} de {trip.progress.total} itens · {money(trip.spent)}
+        {groups.map((group) => (
+          <div key={group.key}>
+            <div className="section-title">
+              <span>
+                {group.emoji} {group.label}
+              </span>
+              <span className="count right">{group.items.length}</span>
+            </div>
+            <div className="card">
+              {group.items.map((item) => (
+                <div className="item" key={item.id}>
+                  <button
+                    className="check"
+                    aria-label={`Marcar ${item.name} como pego`}
+                    onClick={() => {
+                      setFocusPrice(item.id);
+                      void update(item, { picked: true });
+                    }}
+                  >
+                    ✓
+                  </button>
+                  <Thumb src={item.imageUrl} category={item.category} alt={item.name} />
+                  <div className="body">
+                    <div className="name">{item.name}</div>
+                    <div className="meta">
+                      <span>{quantity(item.qty, item.unit)}</span>
+                      {item.expected != null && <span className="faint">{money(item.expected)}</span>}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <button className="btn btn-sm btn-primary" onClick={() => navigate('/compra')}>
-                Continuar
-              </button>
+              ))}
             </div>
           </div>
-        )}
+        ))}
 
-        {count === 0 ? (
-          <div className="empty">
-            <div className="ico">🛒</div>
-            <h3>O carrinho está vazio</h3>
-            <p>Escreva um item acima, busque nos mercados ou use uma lista pronta.</p>
-            <div className="btn-row" style={{ marginTop: 16, maxWidth: 320, marginInline: 'auto' }}>
-              <button className="btn" onClick={() => navigate('/buscar')}>
-                🔍 Buscar
-              </button>
-              <button className="btn" onClick={() => navigate('/listas')}>
-                📋 Listas
-              </button>
-            </div>
-          </div>
-        ) : (
+        {picked.length > 0 && (
           <>
-            {grouped.map((group) => (
-              <div key={group.key}>
-                <div className="section-title">
-                  <span>
-                    {group.emoji} {group.label}
-                  </span>
-                  <span className="count right">{group.items.length}</span>
-                </div>
-                <div className="card">
-                  {group.items.map((item) => (
-                    <ListItemRow
-                      key={item.id}
-                      item={item}
-                      onQty={(qty) => act(api.patch<{ list: ShoppingList }>(`/lists/cart/items/${item.id}`, { qty }))}
-                      onRemove={() => act(api.del<{ list: ShoppingList }>(`/lists/cart/items/${item.id}`))}
+            <div className="section-title">
+              <span>✅ No carrinho</span>
+              <span className="count right">{money(trip.spent)}</span>
+            </div>
+            <p className="small faint" style={{ margin: '0 4px 8px' }}>
+              O preço já vem da lista. Só mexa no campo se a etiqueta estiver diferente.
+            </p>
+            <div className="card">
+              {picked.map((item) => (
+                <div className="item done" key={item.id}>
+                  <button className="check on" aria-label={`Desmarcar ${item.name}`} onClick={() => void update(item, { picked: false })}>
+                    ✓
+                  </button>
+                  <div className="body">
+                    <div className="name">{item.name}</div>
+                    <div className="meta">
+                      <span>{quantity(item.qty, item.unit)}</span>
+                      {item.subtotal != null && <strong className="money">{money(item.subtotal)}</strong>}
+                      {item.corrected && <span className="badge ok">preço corrigido</span>}
+                      {item.pickedBy && <span style={{ color: item.pickedBy.color }}>{item.pickedBy.name}</span>}
+                    </div>
+                  </div>
+                  <div className="row" style={{ flex: 'none', gap: 4 }}>
+                    <span className="small faint">R$</span>
+                    <input
+                      className="input"
+                      style={{ width: 76, padding: '7px 9px', textAlign: 'right' }}
+                      inputMode="decimal"
+                      placeholder="0,00"
+                      value={priceValue(item)}
+                      autoFocus={focusPrice === item.id}
+                      onFocus={() => setFocusPrice(item.id)}
+                      onChange={(e) => setDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                      onBlur={() => void commitPrice(item)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                      }}
+                      aria-label={`Preço de ${item.name}`}
                     />
-                  ))}
+                  </div>
                 </div>
-              </div>
-            ))}
-
-            <div className="stack" style={{ marginTop: 22 }}>
-              <button className="btn btn-primary btn-block btn-lg" onClick={() => setSheet('market')} disabled={!!trip}>
-                📍 Cheguei no mercado
-              </button>
-              <button className="btn btn-block" onClick={() => navigate('/comparar')}>
-                💰 Onde vale mais a pena?
-              </button>
-              <p className="small faint" style={{ margin: '0 4px' }}>
-                O preço é congelado agora, na lista — no mercado o app não fica consultando preço, só carrega este número.
-                {planned.semPreco > 0 &&
-                  ` ${planned.semPreco} ${planned.semPreco === 1 ? 'item escrito' : 'itens escritos'} à mão ${planned.semPreco === 1 ? 'não tem' : 'não têm'} preço.`}
-              </p>
-              <button className="btn btn-danger btn-block btn-sm" onClick={() => setSheet('clear')}>
-                Limpar o carrinho
-              </button>
+              ))}
             </div>
           </>
         )}
+
+        <div className="stack" style={{ marginTop: 20 }}>
+          <button className="btn btn-block" onClick={() => setSheet('add')}>
+            ➕ Lembrei de outra coisa
+          </button>
+          {lists.some((l) => l.itemCount > 0 && !trip.lists.some((s) => s.id === l.id)) && (
+            <button className="btn btn-block" onClick={() => setSheet('addList')}>
+              📋 Trazer outra lista para o carrinho
+            </button>
+          )}
+        </div>
       </main>
 
-      {sheet === 'market' && (
-        <Sheet
-          title="Em qual mercado você está?"
-          subtitle="Isso define o preço esperado de cada item. Dá para começar sem escolher também."
-          onClose={() => setSheet(null)}
-        >
+      {sheet === 'add' && (
+        <Sheet title="Adicionar na compra" subtitle="Entra direto nesta ida ao mercado." onClose={() => setSheet(null)}>
+          <label className="field">
+            <span>Item</span>
+            <input
+              className="input"
+              value={newItem}
+              onChange={(e) => setNewItem(e.target.value)}
+              placeholder="Pilha AA, guardanapo…"
+              autoFocus
+            />
+          </label>
           <div className="stack">
-            {markets.map((m) => (
-              <button
-                key={m.key}
-                className="btn btn-block btn-lg"
-                style={{ borderColor: m.color, color: m.color, justifyContent: 'flex-start' }}
-                disabled={busy}
-                onClick={() => startTrip(m.key)}
-              >
-                <span style={{ width: 10, height: 10, borderRadius: 5, background: m.color }} />
-                {m.label}
-              </button>
-            ))}
-            <button className="btn btn-ghost btn-block" disabled={busy} onClick={() => startTrip(null)}>
-              Outro lugar / não sei ainda
+            <button
+              className="btn btn-primary btn-block btn-lg"
+              disabled={!newItem.trim()}
+              onClick={async () => {
+                const { trip: updated } = await api.post<{ trip: TripType }>(`/trips/${trip.id}/items`, { name: newItem.trim() });
+                setTrip(updated);
+                setNewItem('');
+                setSheet(null);
+              }}
+            >
+              Adicionar
+            </button>
+            <button className="btn btn-ghost btn-block" onClick={() => navigate('/buscar')}>
+              Buscar no catálogo em vez disso
             </button>
           </div>
         </Sheet>
       )}
 
-      {sheet === 'save' && (
+      {sheet === 'addList' && (
         <Sheet
-          title="Salvar como lista"
-          subtitle="Fica guardada para você jogar no carrinho de novo quando quiser."
+          title="Trazer outra lista"
+          subtitle="Os itens entram neste carrinho. Repetido soma a quantidade."
           onClose={() => setSheet(null)}
         >
-          <label className="field">
-            <span>Nome da lista</span>
-            <input
-              className="input"
-              placeholder="Limpeza, churrasco, feira…"
-              value={saveName}
-              onChange={(e) => setSaveName(e.target.value)}
-              autoFocus
-            />
-          </label>
-          <button
-            className="btn btn-primary btn-block btn-lg"
-            disabled={!saveName.trim()}
-            onClick={async () => {
-              await api.post('/lists/cart/save-as', { name: saveName.trim() });
-              await refreshLists();
-              setSaveName('');
-              setSheet(null);
-              navigate('/listas');
-            }}
-          >
-            Salvar lista
-          </button>
+          <div className="stack">
+            {lists
+              .filter((l) => l.itemCount > 0 && !trip.lists.some((s) => s.id === l.id))
+              .map((l) => (
+                <button
+                  key={l.id}
+                  className="btn btn-block btn-lg"
+                  style={{ justifyContent: 'flex-start' }}
+                  onClick={() => void addList(l)}
+                >
+                  <span>{l.emoji}</span>
+                  <span className="grow" style={{ textAlign: 'left' }}>
+                    {l.name}
+                  </span>
+                  <span className="small">{l.itemCount}</span>
+                </button>
+              ))}
+          </div>
         </Sheet>
       )}
 
-      {sheet === 'clear' && (
-        <Sheet title="Limpar o carrinho?" subtitle={`Os ${count} itens saem da lista. Isso não apaga suas listas salvas.`} onClose={() => setSheet(null)}>
+      {sheet === 'finish' && (
+        <Sheet
+          title="Fechar o carrinho"
+          subtitle={
+            progress.missing === 0
+              ? `Tudo pego, ${money(trip.spent)} no total.`
+              : `${progress.picked} pegos (${money(trip.spent)}). Os ${progress.missing} que faltaram viram uma lista nova, para outro mercado ou outro dia.`
+          }
+          onClose={() => setSheet(null)}
+        >
           <div className="stack">
+            <button className="btn btn-primary btn-block btn-lg" disabled={busy} onClick={() => void finish()}>
+              {progress.missing === 0 ? 'Fechar' : 'Fechar e guardar o que faltou'}
+            </button>
+            <button className="btn btn-ghost btn-block" disabled={busy} onClick={() => setSheet(null)}>
+              Continuar comprando
+            </button>
             <button
-              className="btn btn-primary btn-block btn-lg"
+              className="btn btn-danger btn-block btn-sm"
+              disabled={busy}
               onClick={async () => {
-                await act(api.post<{ list: ShoppingList }>('/lists/cart/clear'));
+                await api.post(`/trips/${trip.id}/cancel`);
+                setTrip(null);
                 setSheet(null);
+                navigate('/');
               }}
             >
-              Sim, limpar
-            </button>
-            <button className="btn btn-ghost btn-block" onClick={() => setSheet(null)}>
-              Deixa como está
+              Descartar este carrinho
             </button>
           </div>
         </Sheet>

@@ -1,7 +1,7 @@
 import express from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../auth.js';
-import { getCart, assertListInHousehold } from '../households.js';
+import { getGeneralList, assertListInHousehold } from '../households.js';
 import { hydrate } from '../catalog.js';
 import { compareBasket } from '../compare.js';
 import { snapshotOf, writeSnapshot, readSnapshot, refreshListSnapshots } from '../snapshot.js';
@@ -51,32 +51,34 @@ function listPayload(list) {
     name: list.name,
     kind: list.kind,
     emoji: list.emoji,
+    reusable: !!list.reusable,
     archived: !!list.archived,
     items: itemsOf(list.id),
   };
 }
 
-/** Aceita tanto o id numerico quanto o apelido "cart" na URL. */
+/** Aceita o id numerico ou o apelido "geral" na URL. */
 function resolveList(req) {
   const raw = String(req.params.id);
-  if (raw === 'cart') return getCart(req.user.householdId);
+  if (raw === 'geral') return getGeneralList(req.user.householdId);
   return assertListInHousehold(Number(raw), req.user.householdId);
 }
 
 const touch = (listId) => db.prepare("UPDATE lists SET updated_at = datetime('now') WHERE id = ?").run(listId);
 
 listsRouter.get('/', (req, res) => {
-  const cart = getCart(req.user.householdId);
-  const templates = db
-    .prepare("SELECT * FROM lists WHERE household_id = ? AND kind = 'template' AND archived = 0 ORDER BY name")
+  const general = getGeneralList(req.user.householdId);
+  const named = db
+    .prepare("SELECT * FROM lists WHERE household_id = ? AND kind = 'quick' AND archived = 0 ORDER BY reusable DESC, name")
     .all(req.user.householdId);
   res.json({
-    cart: listPayload(cart),
-    lists: templates.map((l) => ({
+    general: listPayload(general),
+    lists: named.map((l) => ({
       id: l.id,
       name: l.name,
       emoji: l.emoji,
       kind: l.kind,
+      reusable: !!l.reusable,
       itemCount: db.prepare('SELECT COUNT(*) AS n FROM list_items WHERE list_id = ?').get(l.id).n,
       updatedAt: l.updated_at,
     })),
@@ -88,14 +90,14 @@ listsRouter.post('/', (req, res) => {
   if (!name) return res.status(400).json({ error: 'de um nome para a lista' });
   const emoji = String(req.body?.emoji || '📝').slice(0, 8);
   const info = db
-    .prepare("INSERT INTO lists (household_id, name, kind, emoji, created_by) VALUES (?, ?, 'template', ?, ?)")
+    .prepare("INSERT INTO lists (household_id, name, kind, emoji, reusable, created_by) VALUES (?, ?, 'quick', ?, 1, ?)")
     .run(req.user.householdId, name, emoji, req.user.id);
   const list = db.prepare('SELECT * FROM lists WHERE id = ?').get(info.lastInsertRowid);
   publish(req.user.householdId, 'lists');
   res.json({ list: listPayload(list) });
 });
 
-listsRouter.get('/cart', (req, res) => res.json({ list: listPayload(getCart(req.user.householdId)) }));
+listsRouter.get('/geral', (req, res) => res.json({ list: listPayload(getGeneralList(req.user.householdId)) }));
 
 listsRouter.get('/:id', (req, res, next) => {
   try {
@@ -121,7 +123,7 @@ listsRouter.patch('/:id', (req, res, next) => {
 listsRouter.delete('/:id', (req, res, next) => {
   try {
     const list = resolveList(req);
-    if (list.kind === 'cart') return res.status(400).json({ error: 'o carrinho nao pode ser apagado' });
+    if (list.kind === 'general') return res.status(400).json({ error: 'a lista geral nao pode ser apagada' });
     db.prepare('DELETE FROM lists WHERE id = ?').run(list.id);
     publish(req.user.householdId, 'lists');
     res.json({ ok: true });
@@ -172,7 +174,7 @@ listsRouter.post('/:id/items', (req, res, next) => {
       if (productId) writeSnapshot(info.lastInsertRowid, snapshotOf(productId));
     }
     touch(list.id);
-    publish(req.user.householdId, list.kind === 'cart' ? 'cart' : 'lists', { listId: list.id });
+    publish(req.user.householdId, list.kind === 'general' ? 'general' : 'lists', { listId: list.id });
     res.json({ list: listPayload(list) });
   } catch (err) {
     next(err);
@@ -201,7 +203,7 @@ listsRouter.patch('/:id/items/:itemId', (req, res, next) => {
       );
     }
     touch(list.id);
-    publish(req.user.householdId, list.kind === 'cart' ? 'cart' : 'lists', { listId: list.id });
+    publish(req.user.householdId, list.kind === 'general' ? 'general' : 'lists', { listId: list.id });
     res.json({ list: listPayload(list) });
   } catch (err) {
     next(err);
@@ -213,7 +215,7 @@ listsRouter.delete('/:id/items/:itemId', (req, res, next) => {
     const list = resolveList(req);
     db.prepare('DELETE FROM list_items WHERE id = ? AND list_id = ?').run(Number(req.params.itemId), list.id);
     touch(list.id);
-    publish(req.user.householdId, list.kind === 'cart' ? 'cart' : 'lists', { listId: list.id });
+    publish(req.user.householdId, list.kind === 'general' ? 'general' : 'lists', { listId: list.id });
     res.json({ list: listPayload(list) });
   } catch (err) {
     next(err);
@@ -225,66 +227,31 @@ listsRouter.post('/:id/clear', (req, res, next) => {
     const list = resolveList(req);
     db.prepare('DELETE FROM list_items WHERE list_id = ?').run(list.id);
     touch(list.id);
-    publish(req.user.householdId, list.kind === 'cart' ? 'cart' : 'lists', { listId: list.id });
+    publish(req.user.householdId, list.kind === 'general' ? 'general' : 'lists', { listId: list.id });
     res.json({ list: listPayload(list) });
   } catch (err) {
     next(err);
   }
 });
 
-/** Joga uma lista pronta (limpeza, churrasco...) dentro do carrinho. */
-listsRouter.post('/:id/add-to-cart', (req, res, next) => {
-  try {
-    const source = resolveList(req);
-    const cart = getCart(req.user.householdId);
-    if (source.id === cart.id) return res.status(400).json({ error: 'a lista ja e o carrinho' });
-
-    const items = db.prepare('SELECT * FROM list_items WHERE list_id = ?').all(source.id);
-    const add = db.transaction(() => {
-      for (const item of items) {
-        const existing = item.product_id
-          ? db.prepare('SELECT * FROM list_items WHERE list_id = ? AND product_id = ?').get(cart.id, item.product_id)
-          : db
-              .prepare('SELECT * FROM list_items WHERE list_id = ? AND product_id IS NULL AND lower(name) = lower(?)')
-              .get(cart.id, item.name);
-        if (existing) {
-          db.prepare("UPDATE list_items SET qty = qty + ?, updated_at = datetime('now') WHERE id = ?").run(item.qty, existing.id);
-        } else {
-          const nextPos = db.prepare('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM list_items WHERE list_id = ?').get(cart.id).p;
-          db.prepare(
-            `INSERT INTO list_items (list_id, product_id, name, qty, unit, category, image_url, note, position, added_by, price_snapshot, snapshot_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          ).run(
-            cart.id, item.product_id, item.name, item.qty, item.unit, item.category, item.image_url, item.note, nextPos,
-            req.user.id, item.price_snapshot, item.snapshot_at,
-          );
-        }
-      }
-    });
-    add();
-    touch(cart.id);
-    publish(req.user.householdId, 'cart', { listId: cart.id });
-    res.json({ list: listPayload(cart), added: items.length });
-  } catch (err) {
-    next(err);
-  }
-});
-
-/** Salva o carrinho atual como uma lista reutilizavel. */
-listsRouter.post('/cart/save-as', (req, res, next) => {
+/**
+ * Guarda a lista geral como uma lista rapida, para repetir depois. A lista
+ * salva e reutilizavel: usa-la no carrinho nao a consome.
+ */
+listsRouter.post('/geral/save-as', (req, res, next) => {
   try {
     const name = String(req.body?.name || '').trim();
     if (!name) return res.status(400).json({ error: 'de um nome para a lista' });
-    const cart = getCart(req.user.householdId);
+    const general = getGeneralList(req.user.householdId);
     const info = db
-      .prepare("INSERT INTO lists (household_id, name, kind, emoji, created_by) VALUES (?, ?, 'template', ?, ?)")
+      .prepare("INSERT INTO lists (household_id, name, kind, emoji, reusable, created_by) VALUES (?, ?, 'quick', ?, 1, ?)")
       .run(req.user.householdId, name, String(req.body?.emoji || '📝').slice(0, 8), req.user.id);
     const newId = info.lastInsertRowid;
     db.prepare(
       `INSERT INTO list_items (list_id, product_id, name, qty, unit, category, image_url, note, position, added_by, price_snapshot, snapshot_at)
        SELECT ?, product_id, name, qty, unit, category, image_url, note, position, added_by, price_snapshot, snapshot_at
          FROM list_items WHERE list_id = ?`,
-    ).run(newId, cart.id);
+    ).run(newId, general.id);
     publish(req.user.householdId, 'lists');
     res.json({ list: listPayload(db.prepare('SELECT * FROM lists WHERE id = ?').get(newId)) });
   } catch (err) {

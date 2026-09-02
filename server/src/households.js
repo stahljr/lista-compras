@@ -1,15 +1,18 @@
 import { db } from './db.js';
 
-/** Cada casa tem exatamente um carrinho; ele e criado na primeira vez que precisa. */
-export function getCart(householdId) {
-  let cart = db.prepare("SELECT * FROM lists WHERE household_id = ? AND kind = 'cart'").get(householdId);
-  if (!cart) {
+/**
+ * A lista geral: uma por casa, sempre presente, para a proxima compra. E de
+ * uso unico -- quando o carrinho a leva, ela e esvaziada.
+ */
+export function getGeneralList(householdId) {
+  let list = db.prepare("SELECT * FROM lists WHERE household_id = ? AND kind = 'general'").get(householdId);
+  if (!list) {
     const info = db
-      .prepare("INSERT INTO lists (household_id, name, kind, emoji) VALUES (?, 'Carrinho', 'cart', '🛒')")
+      .prepare("INSERT INTO lists (household_id, name, kind, emoji, reusable) VALUES (?, 'Lista geral', 'general', '📝', 0)")
       .run(householdId);
-    cart = db.prepare('SELECT * FROM lists WHERE id = ?').get(info.lastInsertRowid);
+    list = db.prepare('SELECT * FROM lists WHERE id = ?').get(info.lastInsertRowid);
   }
-  return cart;
+  return list;
 }
 
 export function assertListInHousehold(listId, householdId) {
@@ -25,7 +28,7 @@ export function assertListInHousehold(listId, householdId) {
 export function assertTripInHousehold(tripId, householdId) {
   const trip = db.prepare('SELECT * FROM trips WHERE id = ? AND household_id = ?').get(tripId, householdId);
   if (!trip) {
-    const err = new Error('compra nao encontrada');
+    const err = new Error('carrinho nao encontrado');
     err.status = 404;
     throw err;
   }

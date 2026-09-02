@@ -11,7 +11,7 @@ type Store = {
   members: Person[];
   loading: boolean;
   needsSetup: boolean;
-  cart: ShoppingList | null;
+  general: ShoppingList | null;
   lists: ListSummary[];
   trip: Trip | null;
   markets: Market[];
@@ -22,10 +22,10 @@ type Store = {
   login: (email: string, password: string) => Promise<void>;
   register: (data: { name: string; email: string; password: string; invite?: string }) => Promise<void>;
   logout: () => Promise<void>;
-  refreshCart: () => Promise<void>;
+  refreshGeneral: () => Promise<void>;
   refreshLists: () => Promise<void>;
   refreshTrip: () => Promise<void>;
-  setCart: (list: ShoppingList) => void;
+  setGeneral: (list: ShoppingList) => void;
   setTrip: (trip: Trip | null) => void;
 };
 
@@ -38,7 +38,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [members, setMembers] = useState<Person[]>(() => recuperar<Person[]>('members') || []);
   const [loading, setLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
-  const [cart, setCartState] = useState<ShoppingList | null>(() => recuperar<ShoppingList>('cart'));
+  const [general, setGeneralState] = useState<ShoppingList | null>(() => recuperar<ShoppingList>('general'));
   const [lists, setLists] = useState<ListSummary[]>(() => recuperar<ListSummary[]>('lists') || []);
   const [trip, setTripState] = useState<Trip | null>(() => recuperar<Trip>('trip'));
   const [markets, setMarkets] = useState<Market[]>(() => recuperar<Market[]>('markets') || []);
@@ -48,9 +48,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const streamRef = useRef<EventSource | null>(null);
 
   // Tudo que entra no estado tambem e guardado, para o proximo boot offline.
-  const setCart = useCallback((list: ShoppingList) => {
-    setCartState(list);
-    guardar('cart', list);
+  const setGeneral = useCallback((list: ShoppingList) => {
+    setGeneralState(list);
+    guardar('general', list);
   }, []);
   const setTrip = useCallback((value: Trip | null) => {
     setTripState(value);
@@ -58,17 +58,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
   const notePendingWrite = useCallback(() => setPendingWrites(pendentes()), []);
 
-  const refreshCart = useCallback(async () => {
-    const { list } = await api.get<{ list: ShoppingList }>('/lists/cart');
-    setCart(list);
-  }, [setCart]);
+  const refreshGeneral = useCallback(async () => {
+    const { list } = await api.get<{ list: ShoppingList }>('/lists/geral');
+    setGeneral(list);
+  }, [setGeneral]);
 
   const refreshLists = useCallback(async () => {
-    const data = await api.get<{ cart: ShoppingList; lists: ListSummary[] }>('/lists');
-    setCart(data.cart);
+    const data = await api.get<{ general: ShoppingList; lists: ListSummary[] }>('/lists');
+    setGeneral(data.general);
     setLists(data.lists);
     guardar('lists', data.lists);
-  }, [setCart]);
+  }, [setGeneral]);
 
   const refreshTrip = useCallback(async () => {
     const { trip: active } = await api.get<{ trip: Trip | null }>('/trips/active');
@@ -125,8 +125,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     const source = new EventSource('/api/events');
     streamRef.current = source;
-    const onCart = () => {
-      void refreshCart();
+    const onGeneral = () => {
+      void refreshGeneral();
     };
     const onLists = () => {
       void refreshLists();
@@ -134,11 +134,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const onTrip = () => {
       void refreshTrip();
     };
-    source.addEventListener('cart', onCart);
+    source.addEventListener('general', onGeneral);
     source.addEventListener('lists', onLists);
     source.addEventListener('trip', onTrip);
     return () => source.close();
-  }, [user, refreshCart, refreshLists, refreshTrip]);
+  }, [user, refreshGeneral, refreshLists, refreshTrip]);
 
   useEffect(() => {
     const up = () => {
@@ -184,7 +184,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     await api.post('/auth/logout');
     setUser(null);
-    setCartState(null);
+    setGeneralState(null);
     setLists([]);
     setTripState(null);
     limparCache();
@@ -197,7 +197,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       members,
       loading,
       needsSetup,
-      cart,
+      general,
       lists,
       trip,
       markets,
@@ -208,13 +208,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       login,
       register,
       logout,
-      refreshCart,
+      refreshGeneral,
       refreshLists,
       refreshTrip,
-      setCart,
+      setGeneral,
       setTrip,
     }),
-    [user, members, loading, needsSetup, cart, lists, trip, markets, categories, online, pendingWrites, notePendingWrite, login, register, logout, refreshCart, refreshLists, refreshTrip, setCart, setTrip],
+    [user, members, loading, needsSetup, general, lists, trip, markets, categories, online, pendingWrites, notePendingWrite, login, register, logout, refreshGeneral, refreshLists, refreshTrip, setGeneral, setTrip],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

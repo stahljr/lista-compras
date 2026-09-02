@@ -4,12 +4,12 @@ import { api } from '../lib/api';
 import { useStore } from '../lib/store';
 import { ListItemRow } from '../components/ListItemRow';
 import { Sheet } from '../components/Sheet';
-import type { ShoppingList } from '../lib/types';
+import type { ShoppingList, Trip } from '../lib/types';
 
 export default function ListDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { categories, refreshLists, refreshCart } = useStore();
+  const { categories, refreshLists, trip, setTrip } = useStore();
   const [list, setList] = useState<ShoppingList | null>(null);
   const [quick, setQuick] = useState('');
   const [error, setError] = useState('');
@@ -114,7 +114,7 @@ export default function ListDetail() {
           <div className="empty">
             <div className="ico">{list.emoji}</div>
             <h3>Lista vazia</h3>
-            <p>Escreva os itens acima, ou busque produtos no catálogo e adicione ao carrinho e depois salve como lista.</p>
+            <p>Escreva os itens acima, ou busque produtos no catálogo, monte a lista geral e salve-a como lista rápida.</p>
           </div>
         ) : (
           grouped.map((group) => (
@@ -145,12 +145,17 @@ export default function ListDetail() {
             className="btn btn-primary btn-block btn-lg"
             disabled={!list.items.length}
             onClick={async () => {
-              await api.post(`/lists/${list.id}/add-to-cart`);
-              await refreshCart();
-              navigate('/');
+              if (trip) {
+                await api.post(`/trips/${trip.id}/add-list`, { listId: list.id });
+              } else {
+                const { trip: started } = await api.post<{ trip: Trip }>('/trips', { listIds: [list.id] });
+                setTrip(started);
+              }
+              await refreshLists();
+              navigate('/carrinho');
             }}
           >
-            🛒 Jogar no carrinho
+            🛒 {trip ? 'Trazer para o carrinho' : 'Montar carrinho com esta lista'}
           </button>
           <button className="btn btn-block" disabled={!list.items.length} onClick={() => navigate(`/comparar/${list.id}`)}>
             💰 Comparar preços desta lista
@@ -162,7 +167,7 @@ export default function ListDetail() {
       </main>
 
       {confirmDelete && (
-        <Sheet title={`Apagar “${list.name}”?`} subtitle="A lista e seus itens somem. O carrinho não é afetado." onClose={() => setConfirmDelete(false)}>
+        <Sheet title={`Apagar “${list.name}”?`} subtitle="A lista e seus itens somem. A lista geral não é afetada." onClose={() => setConfirmDelete(false)}>
           <div className="stack">
             <button
               className="btn btn-primary btn-block btn-lg"

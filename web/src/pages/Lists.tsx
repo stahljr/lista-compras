@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useStore } from '../lib/store';
 import { relativeDate } from '../lib/format';
+import type { ListSummary, Trip } from '../lib/types';
 import { Sheet } from '../components/Sheet';
 
 const EMOJIS = ['📝', '🧽', '🥩', '🎉', '🍕', '🧴', '🍼', '🐾', '🎂', '🏠', '☕', '🧊'];
 
 export default function Lists() {
-  const { lists, refreshLists, refreshCart } = useStore();
+  const { lists, refreshLists, trip, setTrip } = useStore();
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -29,15 +30,26 @@ export default function Lists() {
     }
   }
 
-  async function addToCart(id: number, listName: string) {
+  /**
+   * Com carrinho aberto, a lista entra nele. Sem carrinho, ela monta um --
+   * que e o caminho de "cheguei no mercado e vou levar so esta lista".
+   */
+  async function toCart(list: ListSummary) {
     setError('');
     try {
-      const { added } = await api.post<{ added: number }>(`/lists/${id}/add-to-cart`);
-      await refreshCart();
-      setToast(`${listName}: ${added} ${added === 1 ? 'item' : 'itens'} no carrinho`);
-      window.setTimeout(() => setToast(''), 2600);
+      if (trip) {
+        const { added } = await api.post<{ added: number }>(`/trips/${trip.id}/add-list`, { listId: list.id });
+        await refreshLists();
+        setToast(`${list.name}: ${added} ${added === 1 ? 'item' : 'itens'} no carrinho`);
+        window.setTimeout(() => setToast(''), 2600);
+        return;
+      }
+      const { trip: started } = await api.post<{ trip: Trip }>('/trips', { listIds: [list.id] });
+      setTrip(started);
+      await refreshLists();
+      navigate('/carrinho');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'não deu para adicionar');
+      setError(err instanceof Error ? err.message : 'não deu para levar ao carrinho');
     }
   }
 
@@ -46,7 +58,7 @@ export default function Lists() {
       <header className="topbar">
         <div className="grow">
           <h1>Listas</h1>
-          <p className="sub">prontas para jogar no carrinho</p>
+          <p className="sub">{trip ? 'toque para trazer ao carrinho' : 'prontas para virar carrinho'}</p>
         </div>
         <button className="btn btn-sm btn-primary" onClick={() => setCreating(true)}>
           Nova
@@ -72,8 +84,8 @@ export default function Lists() {
             <div className="ico">📋</div>
             <h3>Nenhuma lista salva</h3>
             <p>
-              Crie listas que você repete sempre — limpeza, churrasco, feira da semana — e depois jogue no carrinho com um
-              toque.
+              Crie listas que você repete sempre — limpeza, churrasco, feira da semana — e leve ao carrinho com um toque. As
+              que sobrarem de uma compra também aparecem aqui.
             </p>
             <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => setCreating(true)}>
               Criar a primeira
@@ -97,14 +109,14 @@ export default function Lists() {
                     <span>
                       {list.itemCount} {list.itemCount === 1 ? 'item' : 'itens'}
                     </span>
-                    <span className="faint">editada {relativeDate(list.updatedAt)}</span>
+                    {list.reusable ? (
+                      <span className="faint">editada {relativeDate(list.updatedAt)}</span>
+                    ) : (
+                      <span className="badge warn">uso único</span>
+                    )}
                   </div>
                 </div>
-                <button
-                  className="btn btn-sm btn-primary"
-                  disabled={list.itemCount === 0}
-                  onClick={() => void addToCart(list.id, list.name)}
-                >
+                <button className="btn btn-sm btn-primary" disabled={list.itemCount === 0} onClick={() => void toCart(list)}>
                   → 🛒
                 </button>
               </div>

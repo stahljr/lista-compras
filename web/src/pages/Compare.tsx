@@ -13,7 +13,7 @@ export default function Compare() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const target = listId || 'cart';
+  const target = listId || 'geral';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -32,9 +32,12 @@ export default function Compare() {
   }, [load]);
 
   async function startAt(market: string) {
-    const { trip } = await api.post<{ trip: Trip }>('/trips', { market, listId: listId ? Number(listId) : undefined });
+    const { trip } = await api.post<{ trip: Trip }>('/trips', {
+      market,
+      listIds: listId ? [Number(listId)] : undefined,
+    });
     setTrip(trip);
-    navigate('/compra');
+    navigate('/carrinho');
   }
 
   const best = data?.best;

@@ -47,8 +47,10 @@ export type ListItem = {
 export type ShoppingList = {
   id: number;
   name: string;
-  kind: 'cart' | 'template';
+  kind: 'general' | 'quick';
   emoji: string;
+  /** Lista rápida cadastrada sobrevive ao carrinho; a geral e as de sobra não. */
+  reusable: boolean;
   archived: boolean;
   items: ListItem[];
 };
@@ -58,6 +60,7 @@ export type ListSummary = {
   name: string;
   emoji: string;
   kind: string;
+  reusable: boolean;
   itemCount: number;
   updatedAt: string;
 };
@@ -88,7 +91,8 @@ export type TripItem = {
 
 export type Trip = {
   id: number;
-  listId: number | null;
+  /** As listas de onde este carrinho foi montado. */
+  lists: { id: number | null; name: string; kind: string; reusable: boolean }[];
   listName: string;
   market: string | null;
   marketLabel: string | null;
@@ -177,3 +181,10 @@ export type Comparison = {
 };
 
 export type Category = { key: string; label: string; emoji: string; order: number; total: number };
+
+/** Resposta do fecho do carrinho: pegamos tudo, e o que sobrou virou lista. */
+export type FinishResult = {
+  trip: Trip;
+  complete: boolean;
+  leftover: { id: number; name: string; itemCount: number } | null;
+};

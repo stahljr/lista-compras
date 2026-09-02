@@ -1,7 +1,7 @@
 import express from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../auth.js';
-import { getCart, assertListInHousehold, assertTripInHousehold } from '../households.js';
+import { getGeneralList, assertListInHousehold, assertTripInHousehold } from '../households.js';
 import { hydrate, matchKey, priceStats } from '../catalog.js';
 import { priceFor } from '../snapshot.js';
 import { MARKET_BY_KEY } from '../markets/index.js';
@@ -12,6 +12,48 @@ export const tripsRouter = express.Router();
 tripsRouter.use(requireAuth);
 
 const round = (n) => Math.round(n * 100) / 100;
+
+/** As listas que compoem este carrinho. */
+function sourceLists(tripId) {
+  return db
+    .prepare('SELECT list_id AS id, list_name AS name, kind, reusable FROM trip_lists WHERE trip_id = ?')
+    .all(tripId)
+    .map((l) => ({ id: l.id, name: l.name, kind: l.kind, reusable: !!l.reusable }));
+}
+
+/**
+ * Joga os itens de uma lista dentro do carrinho. Item repetido em duas listas
+ * soma a quantidade em vez de virar duas linhas -- se o arroz esta na lista
+ * geral e na do churrasco, e um item de quantidade 2.
+ */
+const mergeListIntoTrip = db.transaction((trip, list, market) => {
+  const items = db.prepare('SELECT * FROM list_items WHERE list_id = ?').all(list.id);
+  let added = 0;
+  for (const item of items) {
+    const existing = item.product_id
+      ? db.prepare('SELECT * FROM trip_items WHERE trip_id = ? AND product_id = ?').get(trip.id, item.product_id)
+      : db
+          .prepare('SELECT * FROM trip_items WHERE trip_id = ? AND product_id IS NULL AND lower(name) = lower(?)')
+          .get(trip.id, item.name);
+    if (existing) {
+      db.prepare('UPDATE trip_items SET qty = qty + ? WHERE id = ?').run(item.qty, existing.id);
+      continue;
+    }
+    const expected = priceFor(item, market) ?? priceStats(matchKey({ name: item.name }))?.last ?? null;
+    db.prepare(
+      `INSERT INTO trip_items (trip_id, list_item_id, product_id, name, qty, unit, category, image_url, note, expected, source_list_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      trip.id, item.id, item.product_id, item.name, item.qty, item.unit, item.category, item.image_url, item.note,
+      expected, list.id,
+    );
+    added++;
+  }
+  db.prepare(
+    'INSERT OR IGNORE INTO trip_lists (trip_id, list_id, list_name, kind, reusable) VALUES (?, ?, ?, ?, ?)',
+  ).run(trip.id, list.id, list.name, list.kind, list.reusable ? 1 : 0);
+  return added;
+});
 
 function tripItems(tripId) {
   return db
@@ -76,7 +118,7 @@ function tripPayload(trip) {
 
   return {
     id: trip.id,
-    listId: trip.list_id,
+    lists: sourceLists(trip.id),
     listName: trip.list_name,
     market: trip.market,
     marketLabel: trip.market ? MARKET_BY_KEY.get(trip.market)?.label || trip.market : null,
@@ -99,42 +141,57 @@ function tripPayload(trip) {
   };
 }
 
-/** Comeca a compra: "cheguei no mercado" congela a lista numa ida ao mercado. */
-tripsRouter.post('/', async (req, res, next) => {
+/**
+ * Monta o carrinho: "cheguei no mercado" pega uma ou mais listas e vira a
+ * lista de conferencia da loja. Nao consulta preco nenhum -- usa o que ficou
+ * gravado quando as listas foram montadas.
+ */
+tripsRouter.post('/', (req, res, next) => {
   try {
     const householdId = req.user.householdId;
     const active = db.prepare("SELECT * FROM trips WHERE household_id = ? AND status = 'active'").get(householdId);
-    if (active) return res.status(409).json({ error: 'ja existe uma compra em andamento', trip: tripPayload(active) });
+    if (active) return res.status(409).json({ error: 'ja existe um carrinho em andamento', trip: tripPayload(active) });
 
     const market = req.body?.market ? String(req.body.market) : null;
     if (market && !MARKET_BY_KEY.has(market)) return res.status(400).json({ error: 'mercado desconhecido' });
 
-    const list = req.body?.listId
-      ? assertListInHousehold(Number(req.body.listId), householdId)
-      : getCart(householdId);
-    const items = db.prepare('SELECT * FROM list_items WHERE list_id = ?').all(list.id);
-    if (!items.length) return res.status(400).json({ error: 'a lista esta vazia' });
+    const pedidas = Array.isArray(req.body?.listIds) && req.body.listIds.length
+      ? req.body.listIds.map(Number)
+      : [getGeneralList(householdId).id];
+    const lists = [...new Set(pedidas)].map((id) => assertListInHousehold(id, householdId));
+    const total = lists.reduce(
+      (acc, l) => acc + db.prepare('SELECT COUNT(*) AS n FROM list_items WHERE list_id = ?').get(l.id).n,
+      0,
+    );
+    if (!total) return res.status(400).json({ error: 'as listas escolhidas estao vazias' });
 
+    const nome = lists.length === 1 ? lists[0].name : `${lists.length} listas`;
     const info = db
       .prepare('INSERT INTO trips (household_id, list_id, list_name, market, started_by) VALUES (?, ?, ?, ?, ?)')
-      .run(householdId, list.id, list.name, market, req.user.id);
-    const tripId = info.lastInsertRowid;
+      .run(householdId, lists[0].id, nome, market, req.user.id);
+    const trip = db.prepare('SELECT * FROM trips WHERE id = ?').get(info.lastInsertRowid);
 
-    // O preco vem do que ficou gravado na montagem da lista -- sem consultar
-    // mercado nenhum agora. Isso faz "cheguei no mercado" abrir na hora e
-    // funcionar com o sinal ruim que costuma ter dentro da loja.
-    const insert = db.prepare(
-      `INSERT INTO trip_items (trip_id, list_item_id, product_id, name, qty, unit, category, image_url, note, expected)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    );
-    for (const item of items) {
-      const expected = priceFor(item, market) ?? priceStats(matchKey({ name: item.name }))?.last ?? null;
-      insert.run(tripId, item.id, item.product_id, item.name, item.qty, item.unit, item.category, item.image_url, item.note, expected);
-    }
+    for (const list of lists) mergeListIntoTrip(trip, list, market);
 
-    const trip = db.prepare('SELECT * FROM trips WHERE id = ?').get(tripId);
-    publish(householdId, 'trip', { tripId });
+    publish(householdId, 'trip', { tripId: trip.id });
     res.json({ trip: tripPayload(trip) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Lembrou de uma lista inteira depois de comecar: entra no carrinho. */
+tripsRouter.post('/:id/add-list', (req, res, next) => {
+  try {
+    const trip = assertTripInHousehold(Number(req.params.id), req.user.householdId);
+    if (trip.status !== 'active') return res.status(409).json({ error: 'este carrinho ja foi fechado' });
+    const list = assertListInHousehold(Number(req.body?.listId), req.user.householdId);
+    if (sourceLists(trip.id).some((l) => l.id === list.id)) {
+      return res.status(409).json({ error: 'esta lista ja esta no carrinho' });
+    }
+    const added = mergeListIntoTrip(trip, list, trip.market);
+    publish(req.user.householdId, 'trip', { tripId: trip.id });
+    res.json({ trip: tripPayload(db.prepare('SELECT * FROM trips WHERE id = ?').get(trip.id)), added });
   } catch (err) {
     next(err);
   }
@@ -151,7 +208,10 @@ tripsRouter.get('/', (req, res) => {
       `SELECT t.*,
               (SELECT COUNT(*) FROM trip_items ti WHERE ti.trip_id = t.id) AS total_items,
               (SELECT COUNT(*) FROM trip_items ti WHERE ti.trip_id = t.id AND ti.picked = 1) AS picked_items,
-              (SELECT COALESCE(SUM(ti.unit_price * COALESCE(ti.picked_qty, ti.qty)), 0)
+              -- Mesma regra do carrinho aberto: vale o preco corrigido a mao e,
+              -- sem correcao, o que foi congelado na lista. Somar so unit_price
+              -- zerava o total de quem nao digitou nada -- que e o caso normal.
+              (SELECT COALESCE(SUM(COALESCE(ti.unit_price, ti.expected) * COALESCE(ti.picked_qty, ti.qty)), 0)
                  FROM trip_items ti WHERE ti.trip_id = t.id AND ti.picked = 1) AS spent
          FROM trips t
         WHERE t.household_id = ? AND t.status != 'active'
@@ -265,20 +325,26 @@ tripsRouter.delete('/:id/items/:itemId', (req, res, next) => {
 });
 
 /**
- * Fecha a compra e resolve o que fazer com a lista de origem:
- *  - 'remove-picked' (padrao): sai o que foi comprado, fica o que faltou
- *  - 'clear': limpa a lista inteira
- *  - 'keep': nao mexe na lista
- * Os precos anotados viram historico, que alimenta a estimativa da proxima ida.
+ * Fecha o carrinho. A resposta e a pergunta do fim da fila: pegamos tudo?
+ *
+ * Se sobrou algo -- porque faltou na loja, porque o preco ali nao valia, ou
+ * por qualquer outro motivo -- o que ficou volta como uma lista nova, pronta
+ * para outro mercado ou outro dia. E o unico destino que faz sentido: o item
+ * continua sendo preciso.
+ *
+ * As listas de uso unico (a geral e as de sobra) sao consumidas, porque tudo
+ * que estava nelas agora esta comprado ou na lista nova. As listas rapidas
+ * cadastradas ficam intactas -- foram feitas para repetir.
  */
 tripsRouter.post('/:id/finish', (req, res, next) => {
   try {
     const trip = assertTripInHousehold(Number(req.params.id), req.user.householdId);
-    if (trip.status !== 'active') return res.status(409).json({ error: 'esta compra ja foi encerrada' });
-    const outcome = ['remove-picked', 'clear', 'keep'].includes(req.body?.outcome) ? req.body.outcome : 'remove-picked';
+    if (trip.status !== 'active') return res.status(409).json({ error: 'este carrinho ja foi fechado' });
 
+    let leftoverId = null;
     const finish = db.transaction(() => {
       const items = db.prepare('SELECT * FROM trip_items WHERE trip_id = ?').all(trip.id);
+      const missing = items.filter((i) => !i.picked);
 
       for (const item of items) {
         // Guarda o preco corrigido a mao; o da lista ja veio do mercado e nao
@@ -291,15 +357,48 @@ tripsRouter.post('/:id/finish', (req, res, next) => {
         }
       }
 
-      if (trip.list_id) {
-        if (outcome === 'clear') {
-          db.prepare('DELETE FROM list_items WHERE list_id = ?').run(trip.list_id);
-        } else if (outcome === 'remove-picked') {
-          for (const item of items) {
-            if (item.picked && item.list_item_id) db.prepare('DELETE FROM list_items WHERE id = ?').run(item.list_item_id);
-          }
+      if (missing.length) {
+        const quando = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        const onde = trip.market ? MARKET_BY_KEY.get(trip.market)?.label || trip.market : null;
+        const nome = onde ? `Faltou no ${onde} · ${quando}` : `Faltou · ${quando}`;
+        const info = db
+          .prepare("INSERT INTO lists (household_id, name, kind, emoji, reusable, created_by) VALUES (?, ?, 'quick', '🔁', 0, ?)")
+          .run(req.user.householdId, nome, req.user.id);
+        leftoverId = info.lastInsertRowid;
+        const insert = db.prepare(
+          `INSERT INTO list_items (list_id, product_id, name, qty, unit, category, image_url, note, position, added_by, price_snapshot, snapshot_at)
+           SELECT ?, product_id, name, qty, unit, category, image_url, note, position, added_by, price_snapshot, snapshot_at
+             FROM list_items WHERE id = ?`,
+        );
+        // O item de origem carrega o preco congelado; quando ele nao existe
+        // mais (item nascido dentro do carrinho), recria do proprio carrinho.
+        const insertNovo = db.prepare(
+          `INSERT INTO list_items (list_id, product_id, name, qty, unit, category, image_url, note, position, added_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        );
+        for (const [indice, item] of missing.entries()) {
+          const origem = item.list_item_id
+            ? db.prepare('SELECT id FROM list_items WHERE id = ?').get(item.list_item_id)
+            : null;
+          if (origem) insert.run(leftoverId, origem.id);
+          else
+            insertNovo.run(
+              leftoverId, item.product_id, item.name, item.qty, item.unit, item.category, item.image_url, item.note, indice,
+              req.user.id,
+            );
         }
-        db.prepare("UPDATE lists SET updated_at = datetime('now') WHERE id = ?").run(trip.list_id);
+      }
+
+      // Consome as listas de uso unico: a geral volta vazia, as de sobra somem
+      // (o que ainda faltava delas ja esta na lista nova).
+      for (const source of sourceLists(trip.id)) {
+        if (!source.id || source.reusable) continue;
+        if (source.kind === 'general') {
+          db.prepare('DELETE FROM list_items WHERE list_id = ?').run(source.id);
+          db.prepare("UPDATE lists SET updated_at = datetime('now') WHERE id = ?").run(source.id);
+        } else {
+          db.prepare('DELETE FROM lists WHERE id = ?').run(source.id);
+        }
       }
 
       db.prepare("UPDATE trips SET status = 'done', finished_at = datetime('now') WHERE id = ?").run(trip.id);
@@ -307,9 +406,21 @@ tripsRouter.post('/:id/finish', (req, res, next) => {
     finish();
 
     const updated = db.prepare('SELECT * FROM trips WHERE id = ?').get(trip.id);
+    const payload = tripPayload(updated);
     publish(req.user.householdId, 'trip', { tripId: trip.id, finished: true });
-    publish(req.user.householdId, 'cart', { listId: trip.list_id });
-    res.json({ trip: tripPayload(updated), outcome });
+    publish(req.user.householdId, 'general');
+    publish(req.user.householdId, 'lists');
+    res.json({
+      trip: payload,
+      complete: payload.progress.missing === 0,
+      leftover: leftoverId
+        ? {
+            id: leftoverId,
+            name: db.prepare('SELECT name FROM lists WHERE id = ?').get(leftoverId).name,
+            itemCount: db.prepare('SELECT COUNT(*) AS n FROM list_items WHERE list_id = ?').get(leftoverId).n,
+          }
+        : null,
+    });
   } catch (err) {
     next(err);
   }

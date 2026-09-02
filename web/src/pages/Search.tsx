@@ -16,7 +16,7 @@ function savingsOf(product: Product) {
 }
 
 export default function Search() {
-  const { setCart, categories, trip, refreshTrip } = useStore();
+  const { setGeneral, categories, trip, refreshTrip } = useStore();
   const [term, setTerm] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
   const [failed, setFailed] = useState<{ market: string; error: string }[]>([]);
@@ -64,7 +64,7 @@ export default function Search() {
     }
   }
 
-  /** Buscando durante a compra, o item vai para a compra; fora dela, pro carrinho. */
+  /** Com carrinho aberto, o item vai direto pra ele; fora disso, para a lista. */
   async function add(product: Product) {
     setError('');
     try {
@@ -72,8 +72,8 @@ export default function Search() {
         await api.post(`/trips/${trip.id}/items`, { productId: product.id, qty: 1 });
         await refreshTrip();
       } else {
-        const { list } = await api.post<{ list: ShoppingList }>('/lists/cart/items', { productId: product.id, qty: 1 });
-        setCart(list);
+        const { list } = await api.post<{ list: ShoppingList }>('/lists/geral/items', { productId: product.id, qty: 1 });
+        setGeneral(list);
       }
       setAdded((prev) => ({ ...prev, [product.id]: true }));
       window.setTimeout(() => setAdded((prev) => ({ ...prev, [product.id]: false })), 1400);
@@ -90,7 +90,7 @@ export default function Search() {
         <div className="grow">
           <h1>Buscar</h1>
           <p className="sub">
-            {trip && trip.status === 'active' ? 'adiciona na compra em andamento' : 'preço nos quatro mercados'}
+            {trip && trip.status === 'active' ? 'adiciona no carrinho em andamento' : 'preço nos quatro mercados'}
           </p>
         </div>
       </header>
