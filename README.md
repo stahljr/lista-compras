@@ -200,13 +200,19 @@ Duas perguntas aparecem aqui:
 
 - *"Would you like to tweak these settings?"* → responda **No**. O `fly.toml`
   do repositório já está do jeito certo, e aceitar faz o flyctl reescrevê-lo.
-- O nome `lista-compras` é global na Fly. Se estiver em uso, ele pede outro —
-  escolha um e **guarde**, porque ele vai para o `fly.toml`.
+O nome `lista-compras` é global na Fly e provavelmente já está em uso: nesse
+caso o flyctl **gera um** (algo como `lista-compras-quiet-paper-3911`) e grava
+no seu `fly.toml`. Anote qual saiu — é ele que o deploy automático vai usar.
 
 ```powershell
 # 5. criar o disco onde o banco vive
 fly volumes create dados --size 1 --region gru
 ```
+
+Se aparecer um aviso de que a organização não tem forma de pagamento, é aqui
+que ele costuma travar: volume é recurso pago e a Fly pede cartão mesmo quando
+o trial cobre o uso. Sem volume o app sobe, mas grava no disco efêmero e
+**perde a lista a cada deploy** — então não vale seguir sem ele.
 
 ```powershell
 # 6. o código de convite da segunda pessoa
