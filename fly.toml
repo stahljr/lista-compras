@@ -5,7 +5,11 @@
 #   fly launch --no-deploy --copy-config
 #   fly volumes create dados --size 1 --region gru
 #   fly secrets set INVITE_CODE=escolha-um-codigo
-#   fly deploy
+#   fly deploy --ha=false
+#
+# O --ha=false nao e opcional aqui: por padrao a Fly sobe duas maquinas para
+# redundancia, e duas maquinas nao montam o mesmo volume nem compartilham um
+# arquivo SQLite.
 app = 'lista-compras'
 primary_region = 'gru'
 
@@ -42,6 +46,13 @@ primary_region = 'gru'
     grace_period = '10s'
     method = 'GET'
     path = '/api/health'
+
+# O banco e um arquivo SQLite e precisa de disco que sobreviva ao deploy.
+# Sem este bloco o DATA_DIR grava no disco efemero do container e a lista se
+# perde a cada atualizacao.
+[mounts]
+  source = 'dados'
+  destination = '/data'
 
 [[vm]]
   size = 'shared-cpu-1x'

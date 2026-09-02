@@ -139,17 +139,54 @@ não existe. Do navegador, só o Condor responderia.
 
 ### Fly.io — uma máquina com volume
 
-Já tem `fly.toml` no repositório.
+O `fly.toml` já está no repositório, então é só seguir os passos.
 
 ```bash
+# 1. instalar o flyctl
+curl -L https://fly.io/install.sh | sh
+#    Windows (PowerShell): iwr https://fly.io/install.sh -useb | iex
+
+# 2. criar a conta / entrar (abre o navegador)
+fly auth signup       # já tem conta? fly auth login
+
+# 3. pegar o projeto
+git clone https://github.com/stahljr/lista-compras.git
+cd lista-compras
+
+# 4. criar o app sem subir ainda, reaproveitando o fly.toml daqui
 fly launch --no-deploy --copy-config
+#    Responda "no" quando ele oferecer ajustar as configurações — o fly.toml
+#    do repositório já está do jeito certo.
+#    "lista-compras" é um nome global na Fly; se estiver em uso, ele pede
+#    outro (ou passe --name lista-da-sua-casa).
+
+# 5. criar o volume do banco, na mesma região do app
 fly volumes create dados --size 1 --region gru
+
+# 6. o código de convite da segunda pessoa
 fly secrets set INVITE_CODE=escolha-um-codigo
-fly deploy
+
+# 7. subir
+fly deploy --ha=false
+
+# 8. abrir no navegador
+fly open
 ```
 
-Uma máquina só: SQLite é um arquivo num volume e não se compartilha entre
-instâncias. É por isso que `min_machines_running` não deve ser aumentado.
+**O `--ha=false` não é detalhe.** Por padrão a Fly sobe duas máquinas para
+redundância, e duas máquinas não montam o mesmo volume nem compartilham um
+arquivo SQLite. Uma máquina só — é por isso que `min_machines_running` também
+não deve ser aumentado.
+
+Opcional, para o app já abrir com catálogo em vez de vazio:
+
+```bash
+fly ssh console -C "npm run seed"
+```
+
+Comandos úteis depois: `fly logs` para acompanhar, `fly status` para ver a
+máquina, `fly deploy --ha=false` de novo a cada atualização (o volume não é
+tocado, a lista continua lá).
 
 **Sobre a espera da primeira tela.** O `fly.toml` vem com
 `auto_stop_machines = 'suspend'`: parada a máquina congela com a memória
