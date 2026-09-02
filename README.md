@@ -139,36 +139,86 @@ não existe. Do navegador, só o Condor responderia.
 
 ### Fly.io — uma máquina com volume
 
-O `fly.toml` já está no repositório, então é só seguir os passos.
+A Fly não tem deploy pelo site: o painel mostra o app, os logs, o volume e os
+segredos, mas quem publica é o `flyctl`, no terminal. A configuração abaixo é
+feita **uma vez**; depois dela, publicar passa a ser um botão aqui no GitHub
+(veja "Publicando sem terminal").
+
+#### Uma vez só, no terminal
+
+No Windows, abra o **PowerShell** (tecla Windows, digite `powershell`, Enter).
+No Mac ou Linux, o Terminal. Cole um bloco por vez.
+
+O PowerShell abre em `C:\WINDOWS\System32`, que é pasta do sistema — não é
+lugar de baixar projeto. Primeiro vá para uma pasta sua:
+
+```powershell
+cd ~
+mkdir projetos -Force
+cd projetos
+```
+
+Agora o flyctl. **O Windows tem instalador próprio (`install.ps1`)** — o
+`install.sh` que aparece na documentação da Fly é para Mac e Linux, e no
+PowerShell ele só devolve erro:
+
+```powershell
+# Windows
+iwr https://fly.io/install.ps1 -useb | iex
+```
 
 ```bash
-# 1. instalar o flyctl
+# Mac ou Linux
 curl -L https://fly.io/install.sh | sh
-#    Windows (PowerShell): iwr https://fly.io/install.sh -useb | iex
+```
 
-# 2. criar a conta / entrar (abre o navegador)
-fly auth signup       # já tem conta? fly auth login
+O instalador termina dizendo para adicionar uma pasta ao `PATH`. **Feche o
+PowerShell e abra de novo** para ele valer — e volte para a pasta
+(`cd ~\projetos`). Confira com `fly version`: se aparecer um número,
+funcionou.
 
-# 3. pegar o projeto
+```powershell
+# 2. criar a conta (abre o navegador; já tem conta? use fly auth login)
+fly auth signup
+```
+
+```powershell
+# 3. baixar o projeto (precisa do Git: https://git-scm.com/download/win)
 git clone https://github.com/stahljr/lista-compras.git
 cd lista-compras
+```
 
-# 4. criar o app sem subir ainda, reaproveitando o fly.toml daqui
+Os passos seguintes têm de rodar **dentro dessa pasta** — é lá que está o
+`fly.toml`. Se você fechar o PowerShell, volte com `cd ~\projetos\lista-compras`.
+
+```powershell
+# 4. criar o app, sem publicar ainda
 fly launch --no-deploy --copy-config
-#    Responda "no" quando ele oferecer ajustar as configurações — o fly.toml
-#    do repositório já está do jeito certo.
-#    "lista-compras" é um nome global na Fly; se estiver em uso, ele pede
-#    outro (ou passe --name lista-da-sua-casa).
+```
 
-# 5. criar o volume do banco, na mesma região do app
+Duas perguntas aparecem aqui:
+
+- *"Would you like to tweak these settings?"* → responda **No**. O `fly.toml`
+  do repositório já está do jeito certo, e aceitar faz o flyctl reescrevê-lo.
+- O nome `lista-compras` é global na Fly. Se estiver em uso, ele pede outro —
+  escolha um e **guarde**, porque ele vai para o `fly.toml`.
+
+```powershell
+# 5. criar o disco onde o banco vive
 fly volumes create dados --size 1 --region gru
+```
 
+```powershell
 # 6. o código de convite da segunda pessoa
 fly secrets set INVITE_CODE=escolha-um-codigo
+```
 
-# 7. subir
+```powershell
+# 7. publicar
 fly deploy --ha=false
+```
 
+```powershell
 # 8. abrir no navegador
 fly open
 ```
@@ -178,15 +228,43 @@ redundância, e duas máquinas não montam o mesmo volume nem compartilham um
 arquivo SQLite. Uma máquina só — é por isso que `min_machines_running` também
 não deve ser aumentado.
 
-Opcional, para o app já abrir com catálogo em vez de vazio:
+Se o flyctl trocou o nome do app no passo 4, salve isso no repositório para o
+deploy automático usar o nome certo:
 
-```bash
-fly ssh console -C "npm run seed"
+```powershell
+git add fly.toml
+git commit -m "Ajusta o nome do app na Fly"
+git push
 ```
 
-Comandos úteis depois: `fly logs` para acompanhar, `fly status` para ver a
-máquina, `fly deploy --ha=false` de novo a cada atualização (o volume não é
-tocado, a lista continua lá).
+#### Publicando sem terminal, das próximas vezes
+
+O repositório traz `.github/workflows/deploy.yml`. Com ele, o deploy vira um
+botão no GitHub. Configuração, uma vez:
+
+```powershell
+fly tokens create deploy
+```
+
+Copie o token inteiro (começa com `FlyV1`). No GitHub, no repositório:
+**Settings → Secrets and variables → Actions → New repository secret**, nome
+`FLY_API_TOKEN`, valor o token. 
+
+Pronto. A partir daí:
+
+- **aba Actions → "Publicar na Fly" → "Run workflow"** publica na hora;
+- e qualquer alteração enviada para a branch publica sozinha.
+
+A imagem é construída nos servidores da Fly (`--remote-only`), então você não
+precisa de Docker em lugar nenhum.
+
+#### Depois de estar no ar
+
+```powershell
+fly logs                            # acompanhar / ver erro
+fly status                          # estado da máquina
+fly ssh console -C "npm run seed"   # opcional: já abre com catálogo cheio
+```
 
 **Sobre a espera da primeira tela.** O `fly.toml` vem com
 `auto_stop_machines = 'suspend'`: parada a máquina congela com a memória
