@@ -1,0 +1,10 @@
+# Sem isto, cada arquivo tocado no Windows aparece como modificado inteiro,
+# porque o Git converte LF para CRLF na copia de trabalho. Normaliza tudo em
+# LF, dentro e fora do repositorio.
+* text=auto eol=lf
+
+# Binarios nao passam por conversao nenhuma.
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
