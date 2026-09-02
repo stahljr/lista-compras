@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useStore } from '../lib/store';
-import { ProductCard } from '../components/ProductCard';
+import { ProductCard, ProductCardSkeleton } from '../components/ProductCard';
 import { Shelf } from '../components/Shelf';
 import type { Product, ShoppingList } from '../lib/types';
 
@@ -12,6 +12,35 @@ type Shelf = { key: string; label: string; emoji: string; total: number; product
 function capaDo(shelf: Shelf) {
   return shelf.products.find((p) => p.imageUrl)?.imageUrl || null;
 }
+
+/** Capa do corredor, com shimmer enquanto a foto nao chega. */
+function CorredorCapa({ src, emoji }: { src: string | null; emoji: string }) {
+  const [carregada, setCarregada] = useState(false);
+  const [quebrada, setQuebrada] = useState(false);
+  if (!src || quebrada) {
+    return (
+      <span className="capa">
+        <span className="ico" aria-hidden="true">
+          {emoji}
+        </span>
+      </span>
+    );
+  }
+  return (
+    <span className="capa">
+      {!carregada && <span className="skeleton" aria-hidden="true" />}
+      <img
+        className={carregada ? 'carregada' : undefined}
+        src={src}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setCarregada(true)}
+        onError={() => setQuebrada(true)}
+      />
+    </span>
+  );
+}
 type SearchResponse = { products: Product[]; failed: { market: string; error: string }[] };
 
 /**
@@ -20,10 +49,11 @@ type SearchResponse = { products: Product[]; failed: { market: string; error: st
  * Com busca, os quatro mercados de uma vez.
  */
 export default function Market() {
-  const { setGeneral, general, trip, refreshTrip } = useStore();
+  const { setGeneral, general, trip, refreshTrip, notify } = useStore();
   const navigate = useNavigate();
   const [term, setTerm] = useState('');
   const [shelves, setShelves] = useState<Shelf[]>([]);
+  const [carregandoShelves, setCarregandoShelves] = useState(true);
   const [results, setResults] = useState<Product[]>([]);
   const [failed, setFailed] = useState<{ market: string; error: string }[]>([]);
   const [category, setCategory] = useState<string | null>(null);
@@ -34,12 +64,15 @@ export default function Market() {
   const debounce = useRef<number | undefined>(undefined);
 
   const buscando = term.trim().length >= 2;
+  const naLista = general?.items.length ?? 0;
+  const destino = trip && trip.status === 'active' ? 'carrinho' : 'lista';
 
   useEffect(() => {
     void api
       .get<{ shelves: Shelf[] }>('/catalog/shelves?perCategory=12')
       .then((d) => setShelves(d.shelves))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setCarregandoShelves(false));
   }, []);
 
   const runSearch = useCallback(async (query: string) => {
@@ -100,13 +133,15 @@ export default function Market() {
       }
       setAdded((p) => ({ ...p, [product.id]: true }));
       window.setTimeout(() => setAdded((p) => ({ ...p, [product.id]: false })), 1400);
+      const onde = destino === 'carrinho' ? 'no carrinho' : 'na lista';
+      notify(`${qty > 1 ? `${qty}× ` : ''}${product.name} ${onde}`, {
+        texto: 'Ver',
+        href: destino === 'carrinho' ? '/carrinho' : '/lista',
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'não deu para adicionar');
     }
   }
-
-  const naLista = general?.items.length ?? 0;
-  const destino = trip && trip.status === 'active' ? 'carrinho' : 'lista';
 
   return (
     <>
@@ -158,17 +193,9 @@ export default function Market() {
                     } else void openCategory(c.key);
                   }}
                 >
-                  <span className="capa">
-                    {/* A capa do corredor e a foto de um produto que esta nele
-                        -- nao ha arte propria, e um produto real ilustra bem. */}
-                    {capaDo(c) ? (
-                      <img src={capaDo(c) as string} alt="" loading="lazy" decoding="async" />
-                    ) : (
-                      <span className="ico" aria-hidden="true">
-                        {c.emoji}
-                      </span>
-                    )}
-                  </span>
+                  {/* A capa do corredor e a foto de um produto que esta nele
+                      -- nao ha arte propria, e um produto real ilustra bem. */}
+                  <CorredorCapa src={capaDo(c)} emoji={c.emoji} />
                   <span className="nome">{c.label}</span>
                 </button>
               ))}
@@ -239,7 +266,22 @@ export default function Market() {
         {/* prateleiras */}
         {!buscando && !category && (
           <>
-            {shelves.length === 0 ? (
+            {carregandoShelves && shelves.length === 0 ? (
+              <>
+                {['a', 'b'].map((k) => (
+                  <div key={k}>
+                    <div className="section-title">
+                      <span className="linha-falsa skeleton" style={{ width: 150, height: 18, display: 'block' }} />
+                    </div>
+                    <div className="prateleira">
+                      {[0, 1, 2, 3, 4, 5].map((i) => (
+                        <ProductCardSkeleton key={i} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </>
+            ) : shelves.length === 0 ? (
               <div className="empty">
                 <div className="ico">🏪</div>
                 <h3>Catálogo vazio</h3>

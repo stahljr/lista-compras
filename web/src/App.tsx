@@ -9,6 +9,7 @@ import Cart from './pages/Cart';
 import Compare from './pages/Compare';
 import History from './pages/History';
 import Profile from './pages/Profile';
+import { Toast } from './components/Toast';
 
 export default function App() {
   const { user, loading, trip, general, online } = useStore();
@@ -40,6 +41,8 @@ export default function App() {
         <Route path="/perfil" element={<Profile />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+
+      <Toast />
 
       {!online && <div className="offline-pill">Sem conexão — mostrando o que já tinha</div>}
 

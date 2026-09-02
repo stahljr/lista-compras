@@ -24,6 +24,7 @@ export function savingsOf(product: Product) {
  */
 export function ProductCard({ product, onAdd, added }: { product: Product; onAdd: (qty: number) => void; added?: boolean }) {
   const [broken, setBroken] = useState(false);
+  const [carregada, setCarregada] = useState(false);
   const [qty, setQty] = useState(1);
   const melhor = product.cheapest;
   const outros = Math.max(0, product.marketsCount - 1);
@@ -36,7 +37,19 @@ export function ProductCard({ product, onAdd, added }: { product: Product; onAdd
 
       <div className="produto-foto">
         {product.imageUrl && !broken ? (
-          <img src={product.imageUrl} alt={product.name} loading="lazy" decoding="async" onError={() => setBroken(true)} />
+          <>
+            {/* Enquanto a foto nao chega, o lugar dela nao fica em branco. */}
+            {!carregada && <span className="skeleton" aria-hidden="true" />}
+            <img
+              className={carregada ? 'carregada' : undefined}
+              src={product.imageUrl}
+              alt={product.name}
+              loading="lazy"
+              decoding="async"
+              onLoad={() => setCarregada(true)}
+              onError={() => setBroken(true)}
+            />
+          </>
         ) : (
           <span className="vazio" aria-hidden="true">
             {EMOJI[product.category] || '📦'}
@@ -87,6 +100,23 @@ export function ProductCard({ product, onAdd, added }: { product: Product; onAdd
       >
         {added ? '✓ Adicionado' : '🛒 Adicionar'}
       </button>
+    </div>
+  );
+}
+
+/** A silhueta do cartao enquanto os dados nao chegam. */
+export function ProductCardSkeleton() {
+  return (
+    <div className="produto fantasma" aria-hidden="true">
+      <div className="produto-foto">
+        <span className="skeleton" />
+      </div>
+      <div className="produto-corpo">
+        <span className="linha-falsa skeleton" />
+        <span className="linha-falsa curta skeleton" />
+        <span className="linha-falsa skeleton" style={{ width: '40%', height: 17 }} />
+      </div>
+      <span className="bloco-falso skeleton" />
     </div>
   );
 }

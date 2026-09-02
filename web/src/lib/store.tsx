@@ -19,6 +19,9 @@ type Store = {
   online: boolean;
   pendingWrites: number;
   notePendingWrite: () => void;
+  toast: { id: number; msg: string; acao?: { texto: string; href: string } } | null;
+  notify: (msg: string, acao?: { texto: string; href: string }) => void;
+  dismissToast: () => void;
   login: (email: string, password: string) => Promise<void>;
   register: (data: { name: string; email: string; password: string; invite?: string }) => Promise<void>;
   logout: () => Promise<void>;
@@ -57,6 +60,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     guardar('trip', value);
   }, []);
   const notePendingWrite = useCallback(() => setPendingWrites(pendentes()), []);
+
+  // Aviso curto de que algo entrou na lista. O botao mudando de texto no
+  // cartao se perde de vista quando a pessoa ja rolou a prateleira.
+  const [toast, setToast] = useState<Store['toast']>(null);
+  const toastTimer = useRef<number | undefined>(undefined);
+  const notify = useCallback((msg: string, acao?: { texto: string; href: string }) => {
+    window.clearTimeout(toastTimer.current);
+    setToast({ id: Date.now(), msg, acao });
+    toastTimer.current = window.setTimeout(() => setToast(null), 3200);
+  }, []);
+  const dismissToast = useCallback(() => {
+    window.clearTimeout(toastTimer.current);
+    setToast(null);
+  }, []);
 
   const refreshGeneral = useCallback(async () => {
     const { list } = await api.get<{ list: ShoppingList }>('/lists/geral');
@@ -205,6 +222,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       online,
       pendingWrites,
       notePendingWrite,
+      toast,
+      notify,
+      dismissToast,
       login,
       register,
       logout,
@@ -214,7 +234,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setGeneral,
       setTrip,
     }),
-    [user, members, loading, needsSetup, general, lists, trip, markets, categories, online, pendingWrites, notePendingWrite, login, register, logout, refreshGeneral, refreshLists, refreshTrip, setGeneral, setTrip],
+    [user, members, loading, needsSetup, general, lists, trip, markets, categories, online, pendingWrites, notePendingWrite, toast, notify, dismissToast, login, register, logout, refreshGeneral, refreshLists, refreshTrip, setGeneral, setTrip],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

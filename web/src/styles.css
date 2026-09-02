@@ -710,3 +710,97 @@ a { color: var(--brand); }
 
 /* Anel de foco visivel: navegar por teclado nao pode ser adivinhacao. */
 :focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 8px; }
+
+/* ---------------------------------------------------------------- shimmer */
+/* A foto do produto vem de fora e demora no 4G. Sem placeholder o cartao fica
+   um bloco branco vazio -- o defeito mais visivel do app. */
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.42), transparent);
+  animation: shimmer 1.4s infinite;
+}
+@media (prefers-color-scheme: dark) {
+  .skeleton::after { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { animation: none; }
+}
+
+.produto-foto .skeleton { position: absolute; inset: 0; border-radius: 0; }
+.produto-foto img { position: relative; z-index: 1; opacity: 0; transition: opacity 0.25s; }
+.produto-foto img.carregada { opacity: 1; }
+
+/* Cartao fantasma do primeiro carregamento, com a mesma silhueta do real. */
+.produto.fantasma { pointer-events: none; }
+.produto.fantasma .linha-falsa { height: 11px; border-radius: 5px; margin-bottom: 7px; }
+.produto.fantasma .linha-falsa.curta { width: 55%; }
+.produto.fantasma .bloco-falso { height: 34px; border-radius: 10px; margin: 0 10px 10px; }
+
+/* ------------------------------------------------------------ resposta ao toque */
+/* O meio segundo depois do clique: o botao afunda e o "pronto" pulsa uma vez,
+   para o toque ter resposta antes de a rede responder. */
+@keyframes pulso-ok {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+.produto-botao { transition: transform 0.09s, background 0.2s, border-color 0.2s; }
+.produto-botao:active { transform: scale(0.96); }
+.produto-botao.ok { animation: pulso-ok 0.4s ease-out; }
+
+/* ----------------------------------------------------------------- toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(78px + var(--safe-bottom));
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(440px, calc(100vw - 28px));
+  padding: 11px 14px;
+  border-radius: 13px;
+  background: var(--text);
+  color: var(--bg);
+  box-shadow: var(--shadow-forte);
+  font-size: 13.5px;
+  font-weight: 600;
+  animation: toast-entra 0.22s ease-out;
+}
+@keyframes toast-entra {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+}
+.toast .msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast button {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--brand-strong);
+  font: inherit;
+  font-weight: 750;
+  padding: 2px 4px;
+}
+@media (prefers-color-scheme: dark) {
+  .toast button { color: var(--brand); }
+}
+@media (min-width: 900px) {
+  .toast { bottom: 24px; left: calc(50% + 104px); }
+}
+
+/* A capa do corredor segue a mesma regra da foto do produto. */
+.corredor .capa { position: relative; }
+.corredor .capa .skeleton { position: absolute; inset: 0; }
+.corredor .capa img { position: relative; z-index: 1; opacity: 0; transition: opacity 0.25s; }
+.corredor .capa img.carregada { opacity: 1; }

@@ -14,7 +14,7 @@ import type { ListItem, Product, ShoppingList, Trip } from '../lib/types';
  * mercado.
  */
 export default function List() {
-  const { general, setGeneral, lists, categories, markets, trip, setTrip, refreshLists } = useStore();
+  const { general, setGeneral, lists, categories, markets, trip, setTrip, refreshLists, notify } = useStore();
   const navigate = useNavigate();
   const [quick, setQuick] = useState('');
   const [sugestoes, setSugestoes] = useState<Product[]>([]);
@@ -92,6 +92,7 @@ export default function List() {
   async function addProduto(product: Product) {
     limparBusca();
     await act(api.post<{ list: ShoppingList }>('/lists/geral/items', { productId: product.id, qty: 1 }));
+    notify(`${product.name} na lista`);
   }
 
   /** Escrito a mao: para o que nao existe no catalogo (papel toalha, gelo...). */
