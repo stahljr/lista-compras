@@ -195,6 +195,9 @@ db.exec(`
 
 // Um carrinho e montado de uma ou mais listas, e guarda de quais veio: no
 // fecho e isso que diz o que consumir e o que deixar cadastrado.
+// trip_item_sources amarra cada item do carrinho aos itens de lista que o
+// originaram -- plural, porque o mesmo produto pode vir de duas listas e virar
+// uma linha so. Sem esse rastro, o fecho nao sabe o que saiu de onde.
 db.exec(`
 CREATE TABLE IF NOT EXISTS trip_lists (
   trip_id   INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
@@ -204,6 +207,14 @@ CREATE TABLE IF NOT EXISTS trip_lists (
   reusable  INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (trip_id, list_id)
 );
+
+CREATE TABLE IF NOT EXISTS trip_item_sources (
+  trip_item_id INTEGER NOT NULL REFERENCES trip_items(id) ON DELETE CASCADE,
+  list_item_id INTEGER NOT NULL,
+  list_id      INTEGER,
+  PRIMARY KEY (trip_item_id, list_item_id)
+);
+CREATE INDEX IF NOT EXISTS idx_trip_item_sources_item ON trip_item_sources(trip_item_id);
 `);
 
 export function nowIso() {

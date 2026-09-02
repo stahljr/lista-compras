@@ -37,15 +37,23 @@ const mergeListIntoTrip = db.transaction((trip, list, market) => {
           .get(trip.id, item.name);
     if (existing) {
       db.prepare('UPDATE trip_items SET qty = qty + ? WHERE id = ?').run(item.qty, existing.id);
+      db.prepare('INSERT OR IGNORE INTO trip_item_sources (trip_item_id, list_item_id, list_id) VALUES (?, ?, ?)').run(
+        existing.id, item.id, list.id,
+      );
       continue;
     }
     const expected = priceFor(item, market) ?? priceStats(matchKey({ name: item.name }))?.last ?? null;
-    db.prepare(
-      `INSERT INTO trip_items (trip_id, list_item_id, product_id, name, qty, unit, category, image_url, note, expected, source_list_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      trip.id, item.id, item.product_id, item.name, item.qty, item.unit, item.category, item.image_url, item.note,
-      expected, list.id,
+    const info = db
+      .prepare(
+        `INSERT INTO trip_items (trip_id, list_item_id, product_id, name, qty, unit, category, image_url, note, expected, source_list_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        trip.id, item.id, item.product_id, item.name, item.qty, item.unit, item.category, item.image_url, item.note,
+        expected, list.id,
+      );
+    db.prepare('INSERT INTO trip_item_sources (trip_item_id, list_item_id, list_id) VALUES (?, ?, ?)').run(
+      info.lastInsertRowid, item.id, list.id,
     );
     added++;
   }
@@ -389,16 +397,33 @@ tripsRouter.post('/:id/finish', (req, res, next) => {
         }
       }
 
-      // Consome as listas de uso unico: a geral volta vazia, as de sobra somem
-      // (o que ainda faltava delas ja esta na lista nova).
+      // Consome as listas de uso unico -- mas so o que de fato entrou neste
+      // carrinho. Cada item do carrinho terminou comprado ou copiado para a
+      // lista nova, entao sai da origem; o que foi anotado na lista DEPOIS de
+      // o carrinho ser montado (o outro mexeu na lista enquanto voce estava no
+      // mercado) nunca esteve aqui e tem de continuar la.
+      const unicas = new Set(sourceLists(trip.id).filter((l) => l.id && !l.reusable).map((l) => l.id));
+      const origens = db
+        .prepare(
+          `SELECT s.list_item_id, s.list_id
+             FROM trip_item_sources s
+             JOIN trip_items ti ON ti.id = s.trip_item_id
+            WHERE ti.trip_id = ?`,
+        )
+        .all(trip.id);
+      for (const origem of origens) {
+        if (!unicas.has(origem.list_id)) continue;
+        db.prepare('DELETE FROM list_items WHERE id = ?').run(origem.list_item_id);
+      }
+
+      // A lista geral e permanente e fica com o que sobrou dela. Uma lista de
+      // sobra so desaparece se tiver zerado -- se ainda tem item, ela continua
+      // valendo.
       for (const source of sourceLists(trip.id)) {
         if (!source.id || source.reusable) continue;
-        if (source.kind === 'general') {
-          db.prepare('DELETE FROM list_items WHERE list_id = ?').run(source.id);
-          db.prepare("UPDATE lists SET updated_at = datetime('now') WHERE id = ?").run(source.id);
-        } else {
-          db.prepare('DELETE FROM lists WHERE id = ?').run(source.id);
-        }
+        const restam = db.prepare('SELECT COUNT(*) AS n FROM list_items WHERE list_id = ?').get(source.id).n;
+        if (source.kind !== 'general' && restam === 0) db.prepare('DELETE FROM lists WHERE id = ?').run(source.id);
+        else db.prepare("UPDATE lists SET updated_at = datetime('now') WHERE id = ?").run(source.id);
       }
 
       db.prepare("UPDATE trips SET status = 'done', finished_at = datetime('now') WHERE id = ?").run(trip.id);

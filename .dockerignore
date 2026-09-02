@@ -1,0 +1,23 @@
+# node_modules do host tem binario nativo (better-sqlite3) compilado para a
+# arquitetura de la; dentro da imagem ele precisa ser reinstalado.
+node_modules
+**/node_modules
+
+# o banco nunca entra na imagem: ele vive num volume
+data
+*.db
+*.db-*
+
+# build e refeito dentro da imagem
+web/dist
+web/tsconfig.tsbuildinfo
+
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md

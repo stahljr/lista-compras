@@ -1,0 +1,35 @@
+# Deploy no Fly.io: uma maquina, um volume para o SQLite, HTTPS automatico.
+# HTTPS nao e detalhe -- sem ele o navegador nao instala o PWA nem registra o
+# service worker, e o app perde o modo offline dentro do mercado.
+#
+#   fly launch --no-deploy --copy-config
+#   fly volumes create dados --size 1 --region gru
+#   fly secrets set INVITE_CODE=escolha-um-codigo
+#   fly deploy
+app = 'lista-compras'
+primary_region = 'gru'
+
+[build]
+
+[env]
+  PORT = '3000'
+  DATA_DIR = '/data'
+  REFRESH_HOURS = '12'
+  CONDOR_STORE_ID = '1441'
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # A casa usa o app em rajadas; a maquina dorme entre elas e acorda no acesso.
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  # Com volume, uma maquina so -- SQLite nao e compartilhado entre instancias.
+  min_machines_running = 0
+
+[mounts]
+  source = 'dados'
+  destination = '/data'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
