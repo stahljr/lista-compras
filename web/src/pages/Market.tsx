@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useStore } from '../lib/store';
 import { ProductCard } from '../components/ProductCard';
+import { Shelf } from '../components/Shelf';
 import type { Product, ShoppingList } from '../lib/types';
 
 type Shelf = { key: string; label: string; emoji: string; total: number; products: Product[] };
@@ -69,10 +70,18 @@ export default function Market() {
   async function openCategory(key: string) {
     setCategory(key);
     setTerm('');
+    setCategoryProducts([]);
     setLoading(true);
     try {
+      // O servidor enche o corredor buscando nos mercados quando ele ainda
+      // esta vazio, entao esta chamada pode levar alguns segundos.
       const d = await api.get<{ products: Product[] }>(`/catalog/categories/${key}?limit=60`);
       setCategoryProducts(d.products);
+      // O que veio pode ter mudado as contagens dos corredores.
+      void api
+        .get<{ shelves: Shelf[] }>('/catalog/shelves?perCategory=12')
+        .then((r) => setShelves(r.shelves))
+        .catch(() => {});
     } finally {
       setLoading(false);
     }
@@ -116,7 +125,10 @@ export default function Market() {
       </header>
 
       <main className="page">
-        <div className="searchbar" style={{ marginBottom: 12 }}>
+        <div className="searchbar busca-mercado" style={{ marginBottom: 12 }}>
+          <span className="lupa" aria-hidden="true">
+            🔍
+          </span>
           <input
             className="input"
             placeholder="Buscar produto: arroz, detergente, café…"
@@ -205,16 +217,22 @@ export default function Market() {
         {!buscando && category && (
           <>
             <div className="section-title">
-              <span>
-                {shelves.find((c) => c.key === category)?.emoji} {shelves.find((c) => c.key === category)?.label}
-              </span>
+              <span>{shelves.find((c) => c.key === category)?.label}</span>
               <span className="count right">{categoryProducts.length}</span>
             </div>
-            <div className="produtos">
-              {categoryProducts.map((p) => (
-                <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(qty) => void add(p, qty)} />
-              ))}
-            </div>
+            {loading && !categoryProducts.length ? (
+              <div className="empty">
+                <div className="spinner" style={{ margin: '0 auto 12px' }} />
+                <h3>Enchendo a prateleira</h3>
+                <p>Buscando este corredor nos quatro mercados — leva alguns segundos na primeira vez.</p>
+              </div>
+            ) : (
+              <div className="produtos">
+                {categoryProducts.map((p) => (
+                  <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(qty) => void add(p, qty)} />
+                ))}
+              </div>
+            )}
           </>
         )}
 
@@ -231,21 +249,19 @@ export default function Market() {
                 </p>
               </div>
             ) : (
-              shelves.map((shelf) => (
+              shelves.filter((s) => s.products.length).map((shelf) => (
                 <div key={shelf.key}>
                   <div className="section-title">
-                    <span>
-                      {shelf.emoji} {shelf.label}
-                    </span>
+                    <span>{shelf.label}</span>
                     <button className="btn btn-ghost btn-sm right" onClick={() => void openCategory(shelf.key)}>
                       ver {shelf.total} →
                     </button>
                   </div>
-                  <div className="prateleira">
+                  <Shelf>
                     {shelf.products.map((p) => (
                       <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(qty) => void add(p, qty)} />
                     ))}
-                  </div>
+                  </Shelf>
                 </div>
               ))
             )}

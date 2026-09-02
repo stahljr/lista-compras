@@ -44,6 +44,13 @@ export default function App() {
       {!online && <div className="offline-pill">Sem conexão — mostrando o que já tinha</div>}
 
       <nav className="tabbar">
+        {/* Marca no topo da navegacao: no desktop a barra lateral comecava no
+            vazio, o que da ar de painel improvisado. Escondida no celular,
+            onde a barra fica embaixo. */}
+        <div className="marca">
+          <img src="/icone-192.png" alt="" width={26} height={26} />
+          <span>Lista de Compras</span>
+        </div>
         <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>
           <span className="ico">🏪</span>
           Mercado

@@ -1,5 +1,5 @@
 import express from 'express';
-import { unifiedSearch, categoryCounts, productsByCategory, shelves, hydrate, fillMissingOffers, priceStats } from '../catalog.js';
+import { unifiedSearch, categoryCounts, productsByCategory, shelves, fillCategory, hydrate, fillMissingOffers, priceStats } from '../catalog.js';
 import { CATEGORIES } from '../categories.js';
 import { marketInfo } from '../markets/index.js';
 
@@ -34,13 +34,22 @@ catalogRouter.get('/shelves', (req, res) => {
   res.json({ shelves: shelves({ perCategory: Math.min(Number(req.query.perCategory) || 10, 20) }) });
 });
 
-catalogRouter.get('/categories/:key', (req, res) => {
-  res.json({
-    products: productsByCategory(req.params.key, {
-      limit: Math.min(Number(req.query.limit) || 60, 100),
-      offset: Number(req.query.offset) || 0,
-    }),
-  });
+catalogRouter.get('/categories/:key', async (req, res, next) => {
+  try {
+    const key = req.params.key;
+    const limit = Math.min(Number(req.query.limit) || 60, 100);
+    const offset = Number(req.query.offset) || 0;
+    let products = productsByCategory(key, { limit, offset });
+    // Corredor vazio (ou quase) busca nos mercados na hora, para nao mostrar
+    // prateleira vazia so porque o seed ainda nao passou por ali.
+    if (req.query.fill !== '0' && !offset && products.length < 12) {
+      await fillCategory(key);
+      products = productsByCategory(key, { limit, offset });
+    }
+    res.json({ products });
+  } catch (err) {
+    next(err);
+  }
 });
 
 catalogRouter.get('/products/:id', async (req, res, next) => {

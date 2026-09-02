@@ -4,52 +4,10 @@
  * preco funciona no primeiro uso. Rodar: npm run seed
  */
 import { unifiedSearch } from '../catalog.js';
+import { TODOS_OS_TERMOS } from '../catalog-terms.js';
 import { categoryCounts } from '../catalog.js';
 
-const TERMOS = [
-  // mercearia
-  'arroz', 'feijao carioca', 'feijao preto', 'macarrao espaguete', 'macarrao parafuso',
-  'oleo de soja', 'azeite de oliva', 'acucar refinado', 'sal refinado', 'farinha de trigo',
-  'molho de tomate', 'extrato de tomate', 'vinagre', 'maionese', 'ketchup', 'mostarda',
-  'atum em lata', 'sardinha em lata', 'milho verde lata', 'ervilha lata', 'azeitona',
-  'leite de coco', 'fuba', 'polvilho', 'amido de milho', 'caldo de galinha',
-  // matinais
-  'cafe', 'cafe soluvel', 'achocolatado em po', 'leite em po', 'aveia', 'granola',
-  'cereal matinal', 'geleia', 'mel', 'torrada', 'cha', 'adocante', 'pao de forma',
-  // frios e laticinios
-  'leite integral', 'leite desnatado', 'leite zero lactose', 'iogurte natural',
-  'iogurte grego', 'requeijao', 'manteiga', 'margarina', 'queijo mussarela',
-  'queijo prato', 'queijo parmesao', 'presunto', 'mortadela', 'creme de leite',
-  'leite condensado', 'ovos',
-  // acougue
-  'file de frango', 'coxa de frango', 'carne moida', 'picanha', 'alcatra', 'costela',
-  'linguica toscana', 'bacon', 'salsicha', 'file de tilapia', 'camarao',
-  // hortifruti
-  'banana', 'maca', 'laranja', 'limao', 'tomate', 'cebola', 'batata', 'alho',
-  'cenoura', 'alface', 'brocolis', 'abobrinha', 'mamao', 'abacate', 'uva',
-  // padaria
-  'pao frances', 'pao de queijo', 'bolo', 'bisnaguinha',
-  // bebidas
-  'agua mineral', 'refrigerante', 'suco de laranja', 'cerveja', 'vinho tinto',
-  'energetico', 'agua de coco',
-  // congelados
-  'pizza congelada', 'nuggets', 'batata frita congelada', 'sorvete', 'acai', 'polpa de fruta',
-  // doces e snacks
-  'chocolate', 'biscoito recheado', 'bolacha agua e sal', 'salgadinho', 'amendoim',
-  'castanha de caju', 'pipoca de microondas', 'gelatina',
-  // limpeza
-  'detergente', 'sabao em po', 'sabao liquido', 'amaciante', 'agua sanitaria',
-  'desinfetante', 'limpador multiuso', 'esponja de aco', 'esponja de louca',
-  'saco de lixo', 'lustra moveis', 'inseticida', 'papel toalha',
-  // higiene
-  'papel higienico', 'shampoo', 'condicionador', 'sabonete', 'creme dental',
-  'escova de dente', 'fio dental', 'desodorante', 'absorvente', 'aparelho de barbear',
-  'algodao', 'hidratante corporal', 'protetor solar',
-  // bebe e pet
-  'fralda', 'lenco umedecido', 'racao para cachorro', 'racao para gato', 'areia higienica',
-  // casa
-  'guardanapo', 'papel aluminio', 'filme plastico', 'pilha aa', 'lampada led', 'carvao',
-];
+const TERMOS = TODOS_OS_TERMOS;
 
 const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
 

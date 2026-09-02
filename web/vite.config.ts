@@ -41,6 +41,17 @@ export default defineConfig({
             },
           },
           {
+            // A fonte tambem precisa valer offline, senao dentro do mercado o
+            // app volta para a fonte do sistema e muda de cara.
+            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'fontes',
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
             urlPattern: /^https:\/\/edge\.osuper\.com\.br\/.*/i,
             handler: 'CacheFirst',
             options: {

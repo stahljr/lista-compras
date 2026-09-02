@@ -1,5 +1,6 @@
 import { db, metaGet, metaSet } from './db.js';
 import { fold, classify, CATEGORIES } from './categories.js';
+import { termosDe } from './catalog-terms.js';
 import { MARKETS, MARKET_BY_KEY, acrossMarkets } from './markets/index.js';
 
 const SEARCH_TTL_MINUTES = Number(process.env.SEARCH_TTL_MINUTES || 360);
@@ -287,15 +288,38 @@ export function productsByCategory(category, { limit = 60, offset = 0 } = {}) {
  */
 export function shelves({ perCategory = 10 } = {}) {
   const counts = new Map(categoryCounts().map((c) => [c.category, c.total]));
-  return CATEGORIES.filter((c) => counts.get(c.key))
-    .map((c) => ({
-      key: c.key,
-      label: c.label,
-      emoji: c.emoji,
-      total: counts.get(c.key),
-      products: productsByCategory(c.key, { limit: perCategory }),
-    }))
-    .filter((c) => c.products.length);
+  // Todos os corredores aparecem, inclusive os que ainda nao tem produto: um
+  // mercado tem o corredor de higiene mesmo quando a prateleira esta por
+  // encher, e esconde-lo faz o app parecer quebrado. Vazio, ele se enche na
+  // primeira vez que alguem entra.
+  return CATEGORIES.filter((c) => c.key !== 'outros' || counts.get(c.key)).map((c) => ({
+    key: c.key,
+    label: c.label,
+    emoji: c.emoji,
+    total: counts.get(c.key) || 0,
+    products: counts.get(c.key) ? productsByCategory(c.key, { limit: perCategory }) : [],
+  }));
+}
+
+/**
+ * Enche um corredor buscando nos mercados os termos daquela categoria. E o que
+ * permite abrir "Higiene" ou "Pet" e ver produto sem ter rodado o seed antes.
+ */
+export async function fillCategory(key, { minimo = 12 } = {}) {
+  const termos = termosDe(key);
+  if (!termos.length) return { buscados: 0 };
+  let buscados = 0;
+  for (const termo of termos) {
+    const atual = db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM products p JOIN offers o ON o.product_id = p.id AND o.price > 0 WHERE p.category = ?`,
+      )
+      .get(key).n;
+    if (atual >= minimo) break;
+    await unifiedSearch(termo, { limit: 24 }).catch(() => null);
+    buscados++;
+  }
+  return { buscados };
 }
 
 // Suba este numero ao mexer nas regras de categoria: a categoria fica gravada

@@ -1,47 +1,67 @@
 :root {
-  --brand: #0f766e;
-  --brand-soft: #ccfbf1;
-  --brand-ink: #115e59;
-  --bg: #f5f6f8;
+  /* Verde-mata profundo com um acento de limao: o verde generico de "app de
+     mercado" e o do botao do Whatsapp; este puxa para a horta e deixa o
+     amarelo servir de destaque de preco. */
+  --brand: #12674b;
+  --brand-strong: #0d4f39;
+  --brand-soft: #e3f3ea;
+  --brand-ink: #0d4f39;
+  --accent: #f2b21c;
+
+  /* Fundo levemente quente, nao o cinza-azulado padrao. */
+  --bg: #f6f4f0;
   --surface: #ffffff;
-  --surface-2: #f8fafc;
-  --border: #e3e7ec;
-  --text: #14181f;
-  --muted: #656f7d;
-  --faint: #98a1ae;
-  --danger: #dc2626;
-  --danger-soft: #fee2e2;
-  --sale: #d92c1f;
-  --ok: #16a34a;
-  --ok-soft: #dcfce7;
-  --warn: #b45309;
-  --warn-soft: #fef3c7;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 8px 24px -16px rgba(16, 24, 40, 0.18);
-  --radius: 14px;
+  --surface-2: #f3f1ec;
+  --border: #e4e0d8;
+  --text: #1b1a17;
+  --muted: #6a6459;
+  --faint: #9b9488;
+
+  --danger: #b8342a;
+  --danger-soft: #fbe7e4;
+  --ok: #12674b;
+  --ok-soft: #e3f3ea;
+  --warn: #8a5a10;
+  --warn-soft: #fdf1d8;
+  --sale: #c62f22;
+
+  /* Sombra em duas camadas: uma rente ao objeto, outra difusa. Uma sombra so
+     achata tudo no mesmo plano. */
+  --shadow: 0 1px 2px rgba(27, 26, 23, 0.05), 0 10px 26px -18px rgba(27, 26, 23, 0.22);
+  --shadow-forte: 0 2px 4px rgba(27, 26, 23, 0.07), 0 18px 40px -22px rgba(27, 26, 23, 0.3);
+  --radius: 16px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --brand: #2dd4bf;
-    --brand-soft: #134e4a;
-    --brand-ink: #99f6e4;
-    --bg: #0b1120;
-    --surface: #151c2c;
-    --surface-2: #1b2436;
-    --border: #26314a;
-    --text: #e8edf5;
-    --muted: #98a5bb;
-    --faint: #6b7a95;
-    --danger: #f87171;
-    --danger-soft: #4c1d1d;
-    --sale: #ef4444;
-    --ok: #4ade80;
-    --ok-soft: #14432a;
-    --warn: #fbbf24;
-    --warn-soft: #45320c;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    /* Escuro quente, quase carvao -- o azul-marinho padrao e o que da o ar de
+       painel de admin. O verde clareia para manter contraste sobre ele. */
+    --brand: #4cc38a;
+    --brand-strong: #6ad3a1;
+    --brand-soft: #172b22;
+    --brand-ink: #a7e8c6;
+    --accent: #f5c250;
+
+    --bg: #16150f;
+    --surface: #201e17;
+    --surface-2: #2a271e;
+    --border: #38342a;
+    --text: #f3efe4;
+    --muted: #a8a191;
+    --faint: #7d7768;
+
+    --danger: #f08a7f;
+    --danger-soft: #3a1c18;
+    --ok: #4cc38a;
+    --ok-soft: #172b22;
+    --warn: #f0c26a;
+    --warn-soft: #33280f;
+    --sale: #e5564a;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 30px -20px rgba(0, 0, 0, 0.8);
+    --shadow-forte: 0 2px 6px rgba(0, 0, 0, 0.55), 0 22px 46px -24px rgba(0, 0, 0, 0.9);
     color-scheme: dark;
   }
 }
@@ -54,7 +74,8 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font: 15px/1.55 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-feature-settings: 'ss01', 'cv11';
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: none;
 }
@@ -110,12 +131,16 @@ a { color: var(--brand); }
 .card-pad { padding: 14px; }
 
 .section-title {
-  display: flex; align-items: center; gap: 8px;
-  margin: 20px 2px 8px; font-size: 12.5px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint);
+  display: flex; align-items: baseline; gap: 10px;
+  margin: 26px 2px 12px;
+  font-size: 18px; font-weight: 700; letter-spacing: -0.02em;
+  color: var(--text);
 }
-.section-title:first-child { margin-top: 4px; }
-.section-title .count { color: var(--faint); font-weight: 600; letter-spacing: 0; text-transform: none; }
+.section-title:first-child { margin-top: 6px; }
+.section-title .count { color: var(--faint); font-size: 13px; font-weight: 600; letter-spacing: 0; }
+.section-title .btn { font-size: 13px; }
+
+.topbar h1 { font-size: 21px; font-weight: 750; letter-spacing: -0.025em; }
 
 /* ----------------------------------------------------------------- buttons */
 .btn {
@@ -604,3 +629,84 @@ a { color: var(--brand); }
   .corredor .capa { width: 112px; height: 112px; }
   .corredor .nome { font-size: 12.5px; }
 }
+
+/* -------------------------------------------------- prateleira com setas */
+.prateleira-wrap { position: relative; }
+.prateleira-seta {
+  position: absolute;
+  top: 38%;
+  z-index: 5;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 4px 14px -4px rgba(9, 14, 25, 0.4);
+}
+.prateleira-seta.esquerda { left: -6px; }
+.prateleira-seta.direita { right: -6px; }
+.prateleira-seta:active { transform: scale(0.92); }
+/* No toque a rolagem e com o dedo; as setas atrapalhariam o alcance. */
+@media (hover: none) {
+  .prateleira-seta { display: none; }
+}
+
+/* ------------------------------------------------------------ acabamento */
+.marca { display: none; }
+@media (min-width: 900px) {
+  .marca {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 6px 13px 18px;
+    font-size: 14px;
+    font-weight: 750;
+    letter-spacing: -0.02em;
+  }
+  .marca img { border-radius: 7px; }
+  .tabbar a.active { background: var(--brand-soft); color: var(--brand-ink); }
+}
+
+/* Busca com a lupa dentro do campo, em vez de um retangulo solto. */
+.busca-mercado { position: relative; }
+.busca-mercado .lupa {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 15px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+.busca-mercado .input { padding-left: 40px; height: 46px; border-radius: 13px; }
+
+/* O cartao ganha borda que reage e sombra em duas camadas. */
+.produto { border-radius: 15px; }
+.produto:hover { box-shadow: var(--shadow-forte); }
+.produto-foto { background: #fff; }
+@media (prefers-color-scheme: dark) {
+  /* Foto de produto vem recortada em branco: manter o branco evita a moldura
+     cinza suja no tema escuro. */
+  .produto-foto { background: #faf8f4; }
+}
+.produto-nome { letter-spacing: -0.01em; }
+.produto-marca { font-size: 11px; letter-spacing: 0.05em; color: var(--faint); }
+.produto-preco .valor { letter-spacing: -0.03em; }
+.produto-botao { border-radius: 11px; letter-spacing: -0.01em; }
+
+/* O corredor com a capa mais alta que larga lembra a placa da gondola. */
+.corredor .capa { border-radius: 15px; box-shadow: var(--shadow); }
+.corredor .nome { letter-spacing: -0.01em; }
+
+.card { border-radius: 15px; }
+.btn { letter-spacing: -0.01em; }
+.btn-primary { background: var(--brand); border-color: var(--brand); }
+.btn-primary:hover { background: var(--brand-strong); border-color: var(--brand-strong); }
+
+/* Anel de foco visivel: navegar por teclado nao pode ser adivinhacao. */
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 8px; }
