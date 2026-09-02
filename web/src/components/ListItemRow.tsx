@@ -1,4 +1,5 @@
 import { quantity } from '../lib/format';
+import { useStore } from '../lib/store';
 import { Thumb } from './Thumb';
 import type { ListItem } from '../lib/types';
 
@@ -7,13 +8,18 @@ export function ListItemRow({
   item,
   onQty,
   onRemove,
+  onMarket,
   showWho = true,
 }: {
   item: ListItem;
   onQty: (qty: number) => void;
   onRemove: () => void;
+  /** Fixa (ou solta) o mercado onde este item deve ser comprado. */
+  onMarket?: (market: string | null) => void;
   showWho?: boolean;
 }) {
+  const { markets } = useStore();
+  const escolhido = markets.find((m) => m.key === item.market);
   return (
     <div className="item">
       <Thumb src={item.imageUrl} category={item.category} alt={item.name} />
@@ -21,6 +27,26 @@ export function ListItemRow({
         <div className="name">{item.name}</div>
         <div className="meta">
           {item.unit !== 'un' && <span>{item.unit}</span>}
+          {onMarket && (
+            <select
+              className="badge"
+              aria-label={`Mercado de ${item.name}`}
+              value={item.market ?? ''}
+              onChange={(e) => onMarket(e.target.value || null)}
+              style={
+                escolhido
+                  ? { background: escolhido.color, color: '#fff', borderColor: 'transparent' }
+                  : { background: 'transparent' }
+              }
+            >
+              <option value="">onde for mais barato</option>
+              {markets.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          )}
           {showWho && item.addedBy && (
             <span className="badge" style={{ borderColor: item.addedBy.color, color: item.addedBy.color }}>
               {item.addedBy.name}

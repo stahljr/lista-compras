@@ -273,6 +273,9 @@ export default function List() {
                       item={item}
                       onQty={(qty) => act(api.patch<{ list: ShoppingList }>(`/lists/geral/items/${item.id}`, { qty }))}
                       onRemove={() => act(api.del<{ list: ShoppingList }>(`/lists/geral/items/${item.id}`))}
+                      onMarket={(market) =>
+                        act(api.patch<{ list: ShoppingList }>(`/lists/geral/items/${item.id}`, { market }))
+                      }
                     />
                   ))}
                 </Card>

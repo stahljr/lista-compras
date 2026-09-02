@@ -192,6 +192,12 @@ addColumn('list_items', 'market', 'TEXT');
 addColumn('trip_items', 'market', 'TEXT');
 // Dentro do corredor: a subdivisao ("agua", "refrigerante") e o tamanho lido
 // do nome, para filtrar sem ter de reprocessar o nome a cada busca.
+// O carrinho leva o preco congelado consigo: dentro do mercado o app nao
+// consulta nada, e e esse retrato que diz se o mercado onde estamos tem o
+// item -- e por quanto.
+addColumn('trip_items', 'price_snapshot', 'TEXT');
+// Quando um item e trocado por um parecido, o nome do que se queria antes.
+addColumn('trip_items', 'swapped_from', 'TEXT');
 addColumn('products', 'subcategory', 'TEXT');
 addColumn('products', 'size_label', 'TEXT');
 addColumn('products', 'size_value', 'REAL');

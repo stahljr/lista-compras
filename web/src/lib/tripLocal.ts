@@ -33,6 +33,7 @@ export function recalcular(trip: Trip): Trip {
       complete: trip.items.length > 0 && faltando.length === 0,
       percent: trip.items.length ? Math.round((pegos.length / trip.items.length) * 100) : 0,
       withoutPrice: trip.items.filter((i) => i.price == null).length,
+      notHere: faltando.filter((i) => i.availableHere === false).length,
     },
     missingByCategory: [...porCategoria.values()],
     spent: gasto,

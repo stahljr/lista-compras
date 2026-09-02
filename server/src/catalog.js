@@ -521,6 +521,52 @@ export function setCategory(productId, category) {
   return info.changes > 0 ? hydrate(productId) : null;
 }
 
+/**
+ * "O Festval nao tem esse arroz -- o que ele tem de parecido?"
+ *
+ * Procura no proprio catalogo, entre os produtos que aquele mercado tem em
+ * estoque, o mais proximo do que se queria: mesma subdivisao do corredor,
+ * mesmo tamanho, mesma marca, e o quanto o nome bate. Nao consulta a rede:
+ * dentro do mercado o sinal e ruim e a resposta tem de ser imediata.
+ */
+export function alternativesIn(market, { productId = null, name = '', limit = 6 } = {}) {
+  const base = productId ? q.productById.get(productId) : null;
+  const alvo = fold(base?.name || name);
+  if (!alvo) return [];
+  const palavras = alvo.split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+
+  const rows = db
+    .prepare(
+      `SELECT p.id, p.name, p.brand, p.subcategory, p.size_label, MIN(o.price) AS preco
+         FROM products p
+         JOIN offers o ON o.product_id = p.id AND o.market = ? AND o.price > 0 AND o.available = 1
+        WHERE p.category = COALESCE(?, p.category) AND p.id != COALESCE(?, -1)
+        GROUP BY p.id`,
+    )
+    .all(market, base?.category ?? null, base?.id ?? null);
+
+  const pontuados = [];
+  for (const row of rows) {
+    const nome = fold(row.name);
+    const casadas = palavras.filter((w) => nome.includes(w)).length;
+    // Sem nenhuma palavra em comum nao e parecido, e so do mesmo corredor.
+    if (!casadas && (!base || row.subcategory !== base.subcategory)) continue;
+    let pontos = palavras.length ? (casadas / palavras.length) * 3 : 0;
+    if (base) {
+      if (base.subcategory && row.subcategory === base.subcategory) pontos += 4;
+      if (base.size_label && row.size_label === base.size_label) pontos += 2;
+      if (base.brand && row.brand === base.brand) pontos += 1;
+    }
+    pontuados.push({ id: row.id, pontos, preco: row.preco });
+  }
+
+  return pontuados
+    .sort((a, b) => b.pontos - a.pontos || a.preco - b.preco)
+    .slice(0, limit)
+    .map((c) => ({ product: hydrate(c.id), priceHere: c.preco }))
+    .filter((c) => c.product);
+}
+
 export function priceStats(key) {
   return db
     .prepare(

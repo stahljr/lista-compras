@@ -28,6 +28,8 @@ function itemsOf(listId) {
       qty: r.qty,
       unit: r.unit,
       category: r.category,
+      // Mercado escolhido para este item; vazio = onde estiver mais barato.
+      market: r.market,
       imageUrl: r.image_url,
       note: r.note,
       position: r.position,
@@ -144,6 +146,7 @@ listsRouter.post('/:id/items', (req, res, next) => {
     let unit = String(body.unit || 'un');
     let imageUrl = body.imageUrl || null;
     let productId = body.productId ? Number(body.productId) : null;
+    const market = body.market ? String(body.market) : null;
 
     if (productId) {
       const product = hydrate(productId);
@@ -170,10 +173,10 @@ listsRouter.post('/:id/items', (req, res, next) => {
       const nextPos = db.prepare('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM list_items WHERE list_id = ?').get(list.id).p;
       const info = db
         .prepare(
-          `INSERT INTO list_items (list_id, product_id, name, qty, unit, category, image_url, note, position, added_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO list_items (list_id, product_id, name, qty, unit, category, image_url, note, position, added_by, market)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(list.id, productId, name, qty, unit, category, imageUrl, body.note || null, nextPos, req.user.id);
+        .run(list.id, productId, name, qty, unit, category, imageUrl, body.note || null, nextPos, req.user.id, market);
       // Congela aqui o preco de cada mercado: e o numero que vai valer na compra.
       if (productId) writeSnapshot(info.lastInsertRowid, snapshotOf(productId));
     }
@@ -196,13 +199,17 @@ listsRouter.patch('/:id/items/:itemId', (req, res, next) => {
       db.prepare('DELETE FROM list_items WHERE id = ?').run(item.id);
     } else {
       db.prepare(
-        `UPDATE list_items SET qty = ?, name = ?, unit = ?, category = ?, note = ?, updated_at = datetime('now') WHERE id = ?`,
+        `UPDATE list_items SET qty = ?, name = ?, unit = ?, category = ?, note = ?, market = ?,
+                               updated_at = datetime('now')
+          WHERE id = ?`,
       ).run(
         qty,
         body.name !== undefined ? String(body.name).trim() || item.name : item.name,
         body.unit !== undefined ? String(body.unit) : item.unit,
         body.category !== undefined ? String(body.category) : item.category,
         body.note !== undefined ? body.note : item.note,
+        // market: null limpa a escolha e volta para "onde estiver mais barato".
+        body.market !== undefined ? (body.market ? String(body.market) : null) : item.market,
         item.id,
       );
     }

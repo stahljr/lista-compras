@@ -180,11 +180,12 @@ export default function Market() {
   }
 
   /** Com carrinho aberto o item vai direto pra ele; fora disso, para a lista. */
-  async function add(product: Product, qty = 1, unit?: string) {
+  async function add(product: Product, qty = 1, unit?: string, market?: string | null) {
     setErro('');
     // A unidade vem do cartao ou do dialogo (bandeja ou peso); sem ela o
-    // servidor usa a do mercado.
-    const corpo = { productId: product.id, qty, ...(unit ? { unit } : {}) };
+    // servidor usa a do mercado. O mercado so vem do dialogo, quando alguem
+    // fixou onde quer comprar aquele item.
+    const corpo = { productId: product.id, qty, ...(unit ? { unit } : {}), ...(market ? { market } : {}) };
     try {
       if (trip && trip.status === 'active') {
         await api.post(`/trips/${trip.id}/items`, corpo);
@@ -384,7 +385,7 @@ export default function Market() {
         product={aberto2}
         open={!!aberto2}
         onOpenChange={(v) => !v && setAberto2(null)}
-        onAdd={(prod, q, u) => void add(prod, q, u)}
+        onAdd={(prod, q, u, m) => void add(prod, q, u, m)}
         onCoverChange={() => void recarregarCorredores()}
       />
     </>

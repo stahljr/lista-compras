@@ -7,7 +7,9 @@ import { useStore } from '../lib/store';
 import { money, quantity } from '../lib/format';
 import { Thumb } from '../components/Thumb';
 import { Sheet } from '../components/Sheet';
-import type { FinishResult, ListSummary, Trip as TripType, TripItem } from '../lib/types';
+import type { FinishResult, ListSummary, Product, Trip as TripType, TripItem } from '../lib/types';
+
+type Parecido = { product: Product; priceHere: number };
 
 /**
  * O carrinho: a lista de conferencia do mercado. Montado de uma ou mais
@@ -15,7 +17,7 @@ import type { FinishResult, ListSummary, Trip as TripType, TripItem } from '../l
  * diferente, corrige o preco.
  */
 export default function Cart() {
-  const { trip, setTrip, refreshGeneral, refreshLists, lists, categories, user, online, pendingWrites, notePendingWrite } = useStore();
+  const { trip, setTrip, refreshGeneral, refreshLists, lists, categories, markets, user, online, pendingWrites, notePendingWrite } = useStore();
   const navigate = useNavigate();
   const [sheet, setSheet] = useState<'finish' | 'add' | 'addList' | null>(null);
   const [result, setResult] = useState<FinishResult | null>(null);
@@ -24,6 +26,7 @@ export default function Cart() {
   const [newItem, setNewItem] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [parecidos, setParecidos] = useState<{ item: TripItem; marketLabel: string; options: Parecido[] } | null>(null);
 
   const groups = useMemo(() => {
     if (!trip) return [];
@@ -62,6 +65,44 @@ export default function Cart() {
       }
       setTrip(anterior);
       setError(err instanceof Error ? err.message : 'não deu para salvar');
+    }
+  }
+
+  /**
+   * "O Festval nao tem esse arroz": procura no proprio catalogo o que este
+   * mercado tem de mais parecido, para dar para resolver ali e nao voltar
+   * para casa sem o item.
+   */
+  async function verParecidos(item: TripItem) {
+    if (!trip) return;
+    setError('');
+    setBusy(true);
+    try {
+      const d = await api.get<{ marketLabel: string; options: Parecido[] }>(
+        `/trips/${trip.id}/items/${item.id}/alternatives`,
+      );
+      setParecidos({ item, marketLabel: d.marketLabel, options: d.options });
+    } catch (err) {
+      setError(semRede(err) ? 'sem sinal para procurar parecidos agora' : 'não deu para procurar parecidos');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function trocarPor(item: TripItem, productId: number) {
+    if (!trip) return;
+    setBusy(true);
+    try {
+      const { trip: atualizado } = await api.post<{ trip: TripType }>(
+        `/trips/${trip.id}/items/${item.id}/swap`,
+        { productId },
+      );
+      setTrip(atualizado);
+      setParecidos(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'não deu para trocar o item');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -254,6 +295,19 @@ export default function Cart() {
             </div>
           )}
 
+          {progress.notHere > 0 && (
+            <div className="banner warn" style={{ marginTop: 10 }}>
+              <span>🔎</span>
+              <span>
+                {progress.notHere === 1
+                  ? '1 item que falta este mercado não tem'
+                  : `${progress.notHere} itens que faltam este mercado não tem`}
+                . Toque em <strong>parecido</strong> para trocar por algo que existe aqui — ou deixe sem marcar, que no
+                fecho volta como lista.
+              </span>
+            </div>
+          )}
+
           {progress.withoutPrice > 0 && (
             <div className="small faint" style={{ marginTop: 10 }}>
               {progress.withoutPrice} {progress.withoutPrice === 1 ? 'item foi escrito' : 'itens foram escritos'} à mão e não
@@ -296,8 +350,28 @@ export default function Cart() {
                     <div className="meta">
                       <span>{quantity(item.qty, item.unit)}</span>
                       {item.expected != null && <span className="faint">{money(item.expected)}</span>}
+                      {item.availableHere === false && <span className="badge warn">não tem aqui</span>}
+                      {item.market && item.market !== trip.market && (
+                        <span
+                          className="badge market"
+                          style={{ background: markets.find((m) => m.key === item.market)?.color }}
+                        >
+                          é do {markets.find((m) => m.key === item.market)?.label}
+                        </span>
+                      )}
+                      {item.swappedFrom && <span className="faint">no lugar de {item.swappedFrom}</span>}
                     </div>
                   </div>
+                  {trip.market && item.availableHere === false && (
+                    <button
+                      className="btn btn-sm"
+                      style={{ flex: 'none' }}
+                      disabled={busy}
+                      onClick={() => void verParecidos(item)}
+                    >
+                      🔎 parecido
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -420,6 +494,49 @@ export default function Cart() {
                 </button>
               ))}
           </div>
+        </Sheet>
+      )}
+
+      {parecidos && (
+        <Sheet
+          title={`Parecidos no ${parecidos.marketLabel}`}
+          subtitle={`no lugar de ${parecidos.item.name}`}
+          onClose={() => setParecidos(null)}
+        >
+          {!parecidos.options.length ? (
+            <p className="small faint">
+              Este mercado não tem nada parecido no catálogo. Deixe o item sem marcar: no fecho ele volta como lista
+              para outro dia.
+            </p>
+          ) : (
+            <div className="card">
+              {parecidos.options.map(({ product, priceHere }) => (
+                <button
+                  key={product.id}
+                  className="item"
+                  style={{ width: '100%', background: 'none', border: 'none', textAlign: 'left' }}
+                  disabled={busy}
+                  onClick={() => void trocarPor(parecidos.item, product.id)}
+                >
+                  <Thumb src={product.imageUrl} category={product.category} alt={product.name} />
+                  <div className="body">
+                    <div className="name">{product.name}</div>
+                    <div className="meta">
+                      {product.brand && <span>{product.brand}</span>}
+                      {product.sizeLabel && <span className="badge">{product.sizeLabel}</span>}
+                    </div>
+                  </div>
+                  <strong className="money" style={{ flex: 'none' }}>
+                    {money(priceHere)}
+                  </strong>
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="small faint" style={{ marginTop: 10 }}>
+            A quantidade continua a mesma. O item trocado fica marcado como "no lugar de{' '}
+            {parecidos.item.name}".
+          </p>
         </Sheet>
       )}
 

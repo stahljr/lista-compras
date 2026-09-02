@@ -29,7 +29,7 @@ export function ProductDialog({
   product: Product | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  onAdd: (p: Product, qty: number, unit: string) => void;
+  onAdd: (p: Product, qty: number, unit: string, market: string | null) => void;
   onCoverChange?: () => void;
 }) {
   const { markets, categories, notify } = useStore();
@@ -38,6 +38,7 @@ export function ProductDialog({
   const [buscando, setBuscando] = useState(false);
   const [qty, setQty] = useState(1);
   const [unidade, setUnidade] = useState(product?.unit || 'un');
+  const [mercado, setMercado] = useState<string | null>(null);
   const [trocandoCategoria, setTrocandoCategoria] = useState(false);
   const [quebrada, setQuebrada] = useState(false);
 
@@ -46,6 +47,7 @@ export function ProductDialog({
     setDetalhe(product);
     setQty(1);
     setUnidade(product.unit);
+    setMercado(null);
     setQuebrada(false);
     setTrocandoCategoria(false);
     setBuscando(true);
@@ -64,8 +66,13 @@ export function ProductDialog({
   const p = detalhe;
   if (!p) return null;
 
-  const disponiveis = p.offers.filter((o) => o.available && o.price > 0);
-  const barato = disponiveis.length ? Math.min(...disponiveis.map((o) => o.price)) : null;
+  // Os mercados vem na ordem do preco: os dois melhores primeiro, que e o que
+  // se quer saber antes de decidir.
+  const disponiveis = [...p.offers.filter((o) => o.available && o.price > 0)].sort((a, b) => a.price - b.price);
+  const ausentes = markets.filter((m) => !disponiveis.some((o) => o.market === m.key));
+  const barato = disponiveis.length ? disponiveis[0].price : null;
+  // O preco que vale para este item: o do mercado escolhido, senao o menor.
+  const valor = mercado ? (disponiveis.find((o) => o.market === mercado)?.price ?? null) : barato;
   const economia = savingsOf(p);
   const categoriaAtual = categories.find((c) => c.key === p.category);
 
@@ -76,7 +83,7 @@ export function ProductDialog({
   const passo = stepOf(unidade);
   const pesos = [0.5, 1, 1.5, 2];
   const naUnidadeDoPreco = unidade === p.unit;
-  const total = barato != null ? barato * qty : null;
+  const total = valor != null ? valor * qty : null;
 
   function trocarUnidade(u: string) {
     setUnidade(u);
@@ -142,37 +149,47 @@ export function ProductDialog({
           </div>
         </DialogHeader>
 
-        {/* preço em cada mercado */}
+        {/* preço em cada mercado, e a escolha de onde comprar este item */}
         <div>
-          <p className="text-muted-foreground mb-2 text-xs font-bold tracking-wider uppercase">Preço por mercado</p>
+          <p className="text-muted-foreground mb-2 text-xs font-bold tracking-wider uppercase">
+            Onde comprar este item
+          </p>
           <div className="overflow-hidden rounded-xl border">
-            {markets.map((m) => {
-              const oferta = disponiveis.find((o) => o.market === m.key);
-              const melhor = oferta && oferta.price === barato && disponiveis.length > 1;
+            {disponiveis.map((oferta, i) => {
+              const m = markets.find((x) => x.key === oferta.market);
+              const escolhido = mercado === oferta.market;
               return (
-                <div
-                  key={m.key}
+                <button
+                  key={oferta.market}
+                  type="button"
+                  onClick={() => setMercado(escolhido ? null : oferta.market)}
                   className={cn(
-                    'flex items-center gap-3 border-b px-3.5 py-2.5 last:border-b-0',
-                    melhor && 'bg-success/10',
+                    'flex w-full items-center gap-3 border-b px-3.5 py-2.5 text-left last:border-b-0 transition-colors',
+                    escolhido ? 'bg-primary/10' : 'hover:bg-muted/60',
                   )}
                 >
-                  <span className="size-2.5 shrink-0 rounded-full" style={{ background: m.color }} />
-                  <span className="flex-1 text-sm font-semibold">{m.label}</span>
-                  {oferta ? (
-                    <>
-                      {melhor && <Badge variant="success">mais barato</Badge>}
-                      <span className="text-[15px] font-bold tabular-nums">{money(oferta.price)}</span>
-                    </>
-                  ) : buscando ? (
-                    <Skeleton className="h-4 w-16" />
-                  ) : (
-                    <span className="text-muted-foreground/70 text-sm">não tem</span>
-                  )}
-                </div>
+                  <span className="size-2.5 shrink-0 rounded-full" style={{ background: m?.color }} />
+                  <span className="flex-1 text-sm font-semibold">{m?.label || oferta.marketLabel}</span>
+                  {i === 0 && disponiveis.length > 1 && <Badge variant="success">mais barato</Badge>}
+                  {i === 1 && <Badge variant="secondary">2º melhor</Badge>}
+                  <span className="text-[15px] font-bold tabular-nums">{money(oferta.price)}</span>
+                  <Check className={cn('size-4 shrink-0', escolhido ? 'text-primary' : 'opacity-0')} />
+                </button>
               );
             })}
+            {ausentes.map((m) => (
+              <div key={m.key} className="flex items-center gap-3 border-b px-3.5 py-2.5 opacity-60 last:border-b-0">
+                <span className="size-2.5 shrink-0 rounded-full" style={{ background: m.color }} />
+                <span className="flex-1 text-sm font-semibold">{m.label}</span>
+                {buscando ? <Skeleton className="h-4 w-16" /> : <span className="text-muted-foreground text-sm">não tem</span>}
+              </div>
+            ))}
           </div>
+          <p className="text-muted-foreground mt-1.5 text-xs">
+            {mercado
+              ? `Este item fica marcado para o ${markets.find((m) => m.key === mercado)?.label}. Toque de novo para soltar.`
+              : 'Sem escolha, vale onde estiver mais barato. Toque num mercado para fixar este item lá.'}
+          </p>
         </div>
 
         {/* o que a casa já pagou */}
@@ -296,7 +313,7 @@ export function ProductDialog({
             size="lg"
             className="flex-1"
             onClick={() => {
-              onAdd(p, qty, unidade);
+              onAdd(p, qty, unidade, mercado);
               onOpenChange(false);
             }}
           >

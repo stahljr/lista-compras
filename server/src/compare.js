@@ -43,6 +43,9 @@ async function priceItems(items, { refresh = true } = {}) {
       qty: item.qty || 1,
       unit: item.unit,
       category: item.category,
+      // O mercado escolhido para o item viaja junto: quem compara precisa ver
+      // que aquela linha ja tem destino.
+      market: item.market || null,
       productId: product.id,
       imageUrl: product.imageUrl || item.image_url,
       prices,

@@ -2,8 +2,8 @@ import express from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { getGeneralList, assertListInHousehold, assertTripInHousehold } from '../households.js';
-import { hydrate, matchKey, priceStats } from '../catalog.js';
-import { priceFor } from '../snapshot.js';
+import { hydrate, matchKey, priceStats, alternativesIn } from '../catalog.js';
+import { priceFor, readSnapshot, snapshotOf } from '../snapshot.js';
 import { MARKET_BY_KEY } from '../markets/index.js';
 import { categoryOrder, categoryLabel } from '../categories.js';
 import { publish } from '../realtime.js';
@@ -42,15 +42,18 @@ const mergeListIntoTrip = db.transaction((trip, list, market) => {
       );
       continue;
     }
-    const expected = priceFor(item, market) ?? priceStats(matchKey({ name: item.name }))?.last ?? null;
+    // Item com mercado escolhido vale pelo preco de lá: a decisao de onde
+    // comprar aquele item ja foi tomada quando ele entrou na lista.
+    const expected = priceFor(item, item.market || market) ?? priceStats(matchKey({ name: item.name }))?.last ?? null;
     const info = db
       .prepare(
-        `INSERT INTO trip_items (trip_id, list_item_id, product_id, name, qty, unit, category, image_url, note, expected, source_list_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO trip_items (trip_id, list_item_id, product_id, name, qty, unit, category, image_url, note, expected,
+                                 source_list_id, market, price_snapshot)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         trip.id, item.id, item.product_id, item.name, item.qty, item.unit, item.category, item.image_url, item.note,
-        expected, list.id,
+        expected, list.id, item.market, item.price_snapshot,
       );
     db.prepare('INSERT INTO trip_item_sources (trip_item_id, list_item_id, list_id) VALUES (?, ?, ?)').run(
       info.lastInsertRowid, item.id, list.id,
@@ -63,7 +66,7 @@ const mergeListIntoTrip = db.transaction((trip, list, market) => {
   return added;
 });
 
-function tripItems(tripId) {
+function tripItems(tripId, mercadoDaVez = null) {
   return db
     .prepare(
       `SELECT t.*, u.name AS picked_by_name, u.color AS picked_by_color
@@ -72,7 +75,12 @@ function tripItems(tripId) {
         WHERE t.trip_id = ?`,
     )
     .all(tripId)
-    .map((r) => ({
+    .map((r) => {
+      // O retrato de precos veio com o item; e ele que responde, sem rede, se
+      // o mercado onde estamos tem o item -- e por quanto.
+      const retrato = readSnapshot(r);
+      const priceHere = mercadoDaVez && retrato ? (retrato[mercadoDaVez] ?? null) : null;
+      return {
       id: r.id,
       productId: r.product_id,
       name: r.name,
@@ -82,6 +90,12 @@ function tripItems(tripId) {
       categoryLabel: categoryLabel(r.category),
       imageUrl: r.image_url,
       note: r.note,
+      // Mercado escolhido para o item, e o que o mercado da vez tem a dizer:
+      // availableHere fica null quando nao ha retrato para consultar.
+      market: r.market,
+      priceHere,
+      availableHere: mercadoDaVez && retrato ? priceHere != null : null,
+      swappedFrom: r.swapped_from,
       picked: !!r.picked,
       unitPrice: r.unit_price,
       pickedQty: r.picked_qty,
@@ -95,7 +109,8 @@ function tripItems(tripId) {
         (r.unit_price ?? r.expected) != null ? round((r.unit_price ?? r.expected) * (r.picked_qty ?? r.qty)) : null,
       pickedBy: r.picked_by ? { id: r.picked_by, name: r.picked_by_name, color: r.picked_by_color } : null,
       pickedAt: r.picked_at,
-    }))
+      };
+    })
     .sort(
       (a, b) =>
         Number(a.picked) - Number(b.picked) ||
@@ -109,7 +124,7 @@ function tripItems(tripId) {
  * importa no meio do corredor -- se ja pegamos tudo.
  */
 function tripPayload(trip) {
-  const items = tripItems(trip.id);
+  const items = tripItems(trip.id, trip.market);
   const picked = items.filter((i) => i.picked);
   const missing = items.filter((i) => !i.picked);
   const spent = round(picked.reduce((acc, i) => acc + (i.subtotal || 0), 0));
@@ -117,6 +132,9 @@ function tripPayload(trip) {
   // Itens sem preco nenhum sao os escritos a mao, que nunca tiveram produto
   // vinculado. Nao e pendencia a cobrar: so nao entram na soma.
   const withoutPrice = items.filter((i) => i.price == null).length;
+  // Itens que este mercado nao tem, pelo retrato de precos da lista. E a
+  // primeira coisa que se quer saber ao chegar: da para resolver tudo aqui?
+  const notHere = missing.filter((i) => i.availableHere === false).length;
 
   const byCategory = new Map();
   for (const item of missing) {
@@ -141,6 +159,7 @@ function tripPayload(trip) {
       complete: items.length > 0 && missing.length === 0,
       percent: items.length ? Math.round((picked.length / items.length) * 100) : 0,
       withoutPrice,
+      notHere,
     },
     missingByCategory: [...byCategory.values()].sort((a, b) => categoryOrder(a.key) - categoryOrder(b.key)),
     spent,
@@ -309,10 +328,69 @@ tripsRouter.post('/:id/items', (req, res, next) => {
     }
     if (!name) return res.status(400).json({ error: 'informe o item' });
 
+    const retrato = productId ? snapshotOf(productId) : null;
     db.prepare(
-      `INSERT INTO trip_items (trip_id, product_id, name, qty, unit, category, image_url, expected)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(trip.id, productId, name, Math.max(Number(body.qty) || 1, 0.01), unit, category, imageUrl, expected);
+      `INSERT INTO trip_items (trip_id, product_id, name, qty, unit, category, image_url, expected, price_snapshot, market)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      trip.id, productId, name, Math.max(Number(body.qty) || 1, 0.01), unit, category, imageUrl, expected,
+      retrato ? JSON.stringify(retrato) : null,
+      body.market ? String(body.market) : null,
+    );
+
+    publish(req.user.householdId, 'trip', { tripId: trip.id });
+    res.json({ trip: tripPayload(trip) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * O que este mercado tem de parecido com o item que ele nao tem. Sem isso a
+ * resposta para "o Festval nao tem esse arroz" seria voltar para casa.
+ */
+tripsRouter.get('/:id/items/:itemId/alternatives', (req, res, next) => {
+  try {
+    const trip = assertTripInHousehold(Number(req.params.id), req.user.householdId);
+    const item = db.prepare('SELECT * FROM trip_items WHERE id = ? AND trip_id = ?').get(Number(req.params.itemId), trip.id);
+    if (!item) return res.status(404).json({ error: 'item nao encontrado' });
+    const market = req.query.market ? String(req.query.market) : trip.market;
+    if (!market) return res.status(400).json({ error: 'esta compra nao esta num mercado especifico' });
+    const options = alternativesIn(market, { productId: item.product_id, name: item.name, limit: 6 });
+    res.json({
+      market,
+      marketLabel: MARKET_BY_KEY.get(market)?.label || market,
+      options,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Troca o item pelo parecido escolhido, mantendo a quantidade. */
+tripsRouter.post('/:id/items/:itemId/swap', (req, res, next) => {
+  try {
+    const trip = assertTripInHousehold(Number(req.params.id), req.user.householdId);
+    if (trip.status !== 'active') return res.status(409).json({ error: 'esta compra ja foi encerrada' });
+    const item = db.prepare('SELECT * FROM trip_items WHERE id = ? AND trip_id = ?').get(Number(req.params.itemId), trip.id);
+    if (!item) return res.status(404).json({ error: 'item nao encontrado' });
+    const product = hydrate(Number(req.body?.productId));
+    if (!product) return res.status(404).json({ error: 'produto nao encontrado' });
+
+    const retrato = snapshotOf(product.id);
+    const expected =
+      (trip.market ? retrato?.[trip.market] : null) ?? product.cheapest?.price ?? null;
+
+    db.prepare(
+      `UPDATE trip_items
+          SET product_id = ?, name = ?, image_url = ?, category = ?, unit = ?, expected = ?, price_snapshot = ?,
+              swapped_from = COALESCE(swapped_from, ?), picked = 0, unit_price = NULL, picked_qty = NULL,
+              picked_by = NULL, picked_at = NULL
+        WHERE id = ?`,
+    ).run(
+      product.id, product.name, product.imageUrl, product.category, item.unit, expected,
+      retrato ? JSON.stringify(retrato) : null, item.name, item.id,
+    );
 
     publish(req.user.householdId, 'trip', { tripId: trip.id });
     res.json({ trip: tripPayload(trip) });

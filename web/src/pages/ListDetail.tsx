@@ -133,6 +133,9 @@ export default function ListDetail() {
                     showWho={false}
                     onQty={(qty) => act(api.patch<{ list: ShoppingList }>(`/lists/${list.id}/items/${item.id}`, { qty }))}
                     onRemove={() => act(api.del<{ list: ShoppingList }>(`/lists/${list.id}/items/${item.id}`))}
+                    onMarket={(market) =>
+                      act(api.patch<{ list: ShoppingList }>(`/lists/${list.id}/items/${item.id}`, { market }))
+                    }
                   />
                 ))}
               </div>

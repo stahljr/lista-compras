@@ -40,6 +40,8 @@ export type ListItem = {
   qty: number;
   unit: string;
   category: string;
+  /** Mercado escolhido para este item; vazio = onde estiver mais barato. */
+  market: string | null;
   imageUrl: string | null;
   note: string | null;
   position: number;
@@ -79,6 +81,14 @@ export type TripItem = {
   unit: string;
   category: string;
   categoryLabel: string;
+  /** Mercado escolhido para o item quando a lista foi montada. */
+  market: string | null;
+  /** Preço deste item no mercado da compra, pelo retrato da lista. */
+  priceHere: number | null;
+  /** Se o mercado da compra tem o item. null = não há retrato para consultar. */
+  availableHere: boolean | null;
+  /** Quando o item foi trocado por um parecido, o que se queria antes. */
+  swappedFrom: string | null;
   imageUrl: string | null;
   note: string | null;
   picked: boolean;
@@ -113,6 +123,8 @@ export type Trip = {
     complete: boolean;
     percent: number;
     withoutPrice: number;
+    /** Quantos itens que faltam este mercado não tem. */
+    notHere: number;
   };
   missingByCategory: { key: string; label: string; items: TripItem[] }[];
   spent: number;
