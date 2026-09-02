@@ -20,15 +20,28 @@ primary_region = 'gru'
 [http_service]
   internal_port = 3000
   force_https = true
-  # A casa usa o app em rajadas; a maquina dorme entre elas e acorda no acesso.
-  auto_stop_machines = 'stop'
+
+  # Espera ociosa: 'suspend' congela a maquina com a memoria intacta, e ela
+  # volta em fracao de segundo -- diferente de 'stop', que desliga e obriga a
+  # subir o processo de novo. E o que evita a espera longa da primeira tela.
+  #
+  # Para nao ter espera nenhuma, troque por:
+  #   auto_stop_machines = 'off'
+  #   min_machines_running = 1
+  # Ai a maquina fica sempre de pe (e passa a contar como uso continuo).
+  auto_stop_machines = 'suspend'
   auto_start_machines = true
-  # Com volume, uma maquina so -- SQLite nao e compartilhado entre instancias.
+
+  # Uma maquina so, sempre: o SQLite e um arquivo num volume e nao se
+  # compartilha entre instancias. Nao aumente isto.
   min_machines_running = 0
 
-[mounts]
-  source = 'dados'
-  destination = '/data'
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/api/health'
 
 [[vm]]
   size = 'shared-cpu-1x'

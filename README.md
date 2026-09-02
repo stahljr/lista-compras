@@ -116,17 +116,30 @@ npm run seed
 
 ## Colocando no ar
 
-O app é um processo Node e um arquivo SQLite, sem serviço externo. O que ele
-precisa é de um **endereço HTTPS**: sem isso o navegador não instala o PWA nem
-registra o service worker, e você perde justamente o modo offline dentro do
-mercado. `http://` só é aceito em `localhost`.
+O app é um processo Node e um arquivo SQLite, sem serviço externo. Ele precisa
+de três coisas do lugar onde for rodar:
 
-Três caminhos, do mais simples ao mais caseiro:
+1. **Executar Node.** Não é site estático.
+2. **Um disco que persista.** O banco é um arquivo; se o disco for efêmero, a
+   lista some a cada reinício.
+3. **Um endereço HTTPS.** Sem isso o navegador não instala o PWA nem registra o
+   service worker, e você perde justamente o modo offline dentro do mercado.
+   `http://` só é aceito em `localhost`.
+
+### Por que o GitHub Pages não serve
+
+O Pages entrega arquivo estático e nada mais: não roda Node, não tem disco, não
+tem `/api`. Login, lista compartilhada e sync entre os dois celulares dependem
+de servidor.
+
+E há um segundo impedimento, independente do primeiro: três dos quatro mercados
+não mandam `Access-Control-Allow-Origin`, então o navegador **bloqueia** a
+chamada direta a eles. Hoje quem consulta os mercados é o servidor, onde CORS
+não existe. Do navegador, só o Condor responderia.
 
 ### Fly.io — uma máquina com volume
 
-Já tem `fly.toml` no repositório. HTTPS sai de graça e o SQLite fica num
-volume, então atualizar a imagem não perde a lista.
+Já tem `fly.toml` no repositório.
 
 ```bash
 fly launch --no-deploy --copy-config
@@ -135,9 +148,25 @@ fly secrets set INVITE_CODE=escolha-um-codigo
 fly deploy
 ```
 
-A máquina dorme entre os acessos e acorda quando alguém abre o app — a primeira
-tela pode levar uns segundos. Uma máquina só: SQLite não é compartilhado entre
-instâncias, e é por isso que `min_machines_running` fica em 0 em vez de escalar.
+Uma máquina só: SQLite é um arquivo num volume e não se compartilha entre
+instâncias. É por isso que `min_machines_running` não deve ser aumentado.
+
+**Sobre a espera da primeira tela.** O `fly.toml` vem com
+`auto_stop_machines = 'suspend'`: parada a máquina congela com a memória
+intacta e volta em fração de segundo — diferente de desligar e ter que subir o
+processo outra vez. Se você preferir não ter espera nenhuma, deixe a máquina
+sempre de pé:
+
+```toml
+auto_stop_machines = 'off'
+min_machines_running = 1
+```
+
+Isso passa a contar como uso contínuo — confira o preço atual na Fly antes.
+
+Vale lembrar que o modo offline ameniza o problema: o app abre com o último
+estado guardado no aparelho, sem esperar o servidor. Quem espera é só a
+primeira sincronização.
 
 ### Docker em qualquer VPS
 
@@ -149,11 +178,16 @@ docker compose up -d --build
 O banco fica num volume. Falta o HTTPS: ponha um Caddy ou nginx na frente com
 um domínio, ou use um Cloudflare Tunnel apontando para a porta 3000.
 
+O `Dockerfile` é multi-estágio por um motivo concreto: `better-sqlite3` é
+módulo nativo, e o instalador tenta baixar um binário pronto e **compila** se
+não houver um para a plataforma. O compilador fica só no estágio que instala as
+dependências; a imagem final não o carrega.
+
 ### Um computador em casa
 
-Serve se você já tem um PC ou Raspberry sempre ligado. Rode com Docker (acima)
-e exponha com **Cloudflare Tunnel**, que dá um domínio HTTPS sem abrir porta no
-roteador:
+Serve se você já tem um PC ou Raspberry sempre ligado — e resolve de vez a
+espera da primeira tela, porque nada dorme. Rode com Docker (acima) e exponha
+com **Cloudflare Tunnel**, que dá um domínio HTTPS sem abrir porta no roteador:
 
 ```bash
 cloudflared tunnel --url http://localhost:3000
@@ -161,6 +195,13 @@ cloudflared tunnel --url http://localhost:3000
 
 Só na rede local (`http://192.168.x.x:3000`) o app abre no navegador, mas **não
 instala como PWA e não funciona offline** — o que anula metade da ideia.
+
+### Hospedagens sem disco persistente
+
+Planos gratuitos que não oferecem disco (o free tier do Render é o caso mais
+comum) não servem para este app: o SQLite é um arquivo, e sem disco a lista se
+perde a cada reinício. Além disso, esses planos costumam derrubar o serviço
+quando ele fica ocioso, e a volta demora bem mais que a suspensão do Fly.
 
 ### Instalando no celular
 
