@@ -77,9 +77,10 @@ function marketTotals(priced) {
 
 /**
  * Para cada par de mercados, manda cada item para o mais barato dos dois.
- * Sao só 6 pares, entao da para calcular o otimo exato sem heuristica.
+ * Sao so 6 pares, entao da para calcular o otimo exato sem heuristica.
+ * Escolhe o par que pega mais itens e, entre os empatados, o mais barato.
  */
-function bestSplit(priced, singleBaseline) {
+function bestSplit(priced) {
   let best = null;
   for (let i = 0; i < MARKETS.length; i++) {
     for (let j = i + 1; j < MARKETS.length; j++) {
@@ -100,7 +101,8 @@ function bestSplit(priced, singleBaseline) {
         assignment[target.key].push({ ...item, price, subtotal: round(price * item.qty) });
         total += price * item.qty;
       }
-      if (!assignment[a.key].length || !assignment[b.key].length) continue; // par que na pratica e um mercado so
+      // Um par em que um dos lados nao leva nada e so um mercado unico disfarcado.
+      if (!assignment[a.key].length || !assignment[b.key].length) continue;
       const candidate = {
         markets: [
           { key: a.key, label: a.label, color: a.color, items: assignment[a.key], total: round(sum(assignment[a.key])) },
@@ -115,12 +117,34 @@ function bestSplit(priced, singleBaseline) {
       }
     }
   }
-  if (!best) return null;
-  if (singleBaseline != null) {
-    best.savings = round(singleBaseline - best.total);
-    best.savingsPct = singleBaseline > 0 ? Math.round((best.savings / singleBaseline) * 1000) / 10 : 0;
-  }
   return best;
+}
+
+/**
+ * Compara a divisao com o melhor mercado unico sobre a MESMA cesta: sem isso a
+ * conta engana, porque o par costuma cobrir itens que o mercado unico nao tem
+ * e o total maior parece desvantagem quando e so cesta maior.
+ * Devolve a economia real nos itens em comum e, separado, o que custa a mais
+ * para levar os itens que so existem no segundo mercado.
+ */
+function describeSplit(split, single, priced) {
+  if (!split || !single) return split;
+  const coveredBySingle = new Set(priced.filter((i) => i.prices[single.key] != null).map((i) => i.id));
+  let comparable = 0;
+  const extra = [];
+  for (const market of split.markets) {
+    for (const item of market.items) {
+      if (coveredBySingle.has(item.id)) comparable += item.subtotal;
+      else extra.push({ name: item.name, subtotal: item.subtotal, market: market.label });
+    }
+  }
+  split.comparableTotal = round(comparable);
+  split.savings = round(single.total - comparable);
+  split.savingsPct = single.total > 0 ? Math.round((split.savings / single.total) * 1000) / 10 : 0;
+  split.extraItems = extra;
+  split.extraCost = round(extra.reduce((acc, e) => acc + e.subtotal, 0));
+  split.comparedTo = { key: single.key, label: single.label, total: single.total };
+  return split;
 }
 
 const sum = (items) => items.reduce((acc, i) => acc + i.subtotal, 0);
@@ -130,27 +154,29 @@ const sum = (items) => items.reduce((acc, i) => acc + i.subtotal, 0);
  * o melhor mercado unico e a melhor divisao em dois -- com a economia que a
  * divisao traz, para dar para decidir se vale a segunda parada.
  */
-export async function compareBasket(items, { refresh = true, minSplitSavings = 5 } = {}) {
+export async function compareBasket(items, { refresh = true, minSplitSavings = 3 } = {}) {
   const { priced, unpriced } = await priceItems(items, { refresh });
   if (!priced.length) {
-    return { itemCount: items.length, priced: [], unpriced, markets: [], best: null, split: null };
+    return { itemCount: items.length, priced: [], unpriced, markets: [], best: null, split: null, worthSplitting: false };
   }
 
   const markets = marketTotals(priced);
   const complete = markets.filter((m) => m.complete);
   // Melhor mercado unico: o mais barato entre os que tem tudo; se nenhum tem
   // tudo, o que cobre mais itens (empate resolvido pelo preco).
-  const best = complete.length ? complete.reduce((a, b) => (b.total < a.total ? b : a)) : markets[0] || null;
+  const single = complete.length ? complete.reduce((a, b) => (b.total < a.total ? b : a)) : markets[0] || null;
 
-  const split = bestSplit(priced, best?.complete ? best.total : null);
-  const worthSplitting = !!split && (split.savings == null ? split.covered > (best?.covered ?? 0) : split.savings >= minSplitSavings);
+  const split = describeSplit(bestSplit(priced), single, priced);
+  // So vale sugerir a segunda parada quando ela economiza de fato na mesma
+  // cesta. Cobrir item que falta e outra conversa, e a tela diz isso separado.
+  const worthSplitting = !!split && split.savings >= minSplitSavings;
 
   return {
     itemCount: items.length,
     priced,
     unpriced,
     markets,
-    best,
+    best: single,
     split,
     worthSplitting,
     cheapestPossible: round(priced.reduce((acc, i) => acc + i.cheapestPrice * i.qty, 0)),

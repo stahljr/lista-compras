@@ -4,7 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Lista de compras compartilhada com comparacao de precos entre Angeloni, Festval, Muffato e Condor",
-  "workspaces": ["server", "web"],
+  "workspaces": [
+    "server",
+    "web"
+  ],
   "scripts": {
     "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "npm --workspace server run dev",
@@ -16,5 +19,7 @@
   "devDependencies": {
     "concurrently": "^9.1.2"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

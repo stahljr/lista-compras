@@ -7,6 +7,7 @@ import { catalogRouter } from './routes/catalog.js';
 import { listsRouter } from './routes/lists.js';
 import { tripsRouter } from './routes/trips.js';
 import { subscribe } from './realtime.js';
+import { startRefresher } from './refresher.js';
 import './db.js';
 
 const app = express();
@@ -48,6 +49,7 @@ app.use((err, _req, res, _next) => {
 
 purgeExpiredSessions();
 setInterval(purgeExpiredSessions, 6 * 3600 * 1000).unref();
+startRefresher();
 
 app.listen(PORT, () => {
   console.log(`lista-compras: API em http://localhost:${PORT}`);

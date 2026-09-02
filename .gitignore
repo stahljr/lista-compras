@@ -6,3 +6,6 @@ data/
 *.db-wal
 .env
 .DS_Store
+
+# artefato do build incremental do TypeScript
+web/tsconfig.tsbuildinfo

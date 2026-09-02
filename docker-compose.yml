@@ -1,0 +1,15 @@
+services:
+  lista:
+    build: .
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      INVITE_CODE: ${INVITE_CODE:?defina INVITE_CODE no .env}
+      REFRESH_HOURS: ${REFRESH_HOURS:-12}
+      CONDOR_STORE_ID: ${CONDOR_STORE_ID:-1441}
+    volumes:
+      - dados:/data
+
+volumes:
+  dados:
