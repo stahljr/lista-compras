@@ -1,10 +1,17 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
-import { useStore } from '../lib/store';
-import { relativeDate } from '../lib/format';
-import type { ListSummary, Trip } from '../lib/types';
-import { Sheet } from '../components/Sheet';
+import { Check, ClipboardList, Plus, ShoppingCart, TriangleAlert } from 'lucide-react';
+import { api } from '@/lib/api';
+import { useStore } from '@/lib/store';
+import { relativeDate } from '@/lib/format';
+import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Banner, EmptyState, Field, Page, Row, RowBody, RowMeta, RowName, Topbar } from '@/components/Layout';
+import { Sheet } from '@/components/Sheet';
+import type { ListSummary, Trip } from '@/lib/types';
 
 const EMOJIS = ['📝', '🧽', '🥩', '🎉', '🍕', '🧴', '🍼', '🐾', '🎂', '🏠', '☕', '🧊'];
 
@@ -55,101 +62,113 @@ export default function Lists() {
 
   return (
     <>
-      <header className="topbar">
-        <div className="grow">
-          <h1>Listas</h1>
-          <p className="sub">{trip ? 'toque para trazer ao carrinho' : 'prontas para virar carrinho'}</p>
-        </div>
-        <button className="btn btn-sm btn-primary" onClick={() => setCreating(true)}>
+      <Topbar title="Listas" subtitle={trip ? 'toque para trazer ao carrinho' : 'prontas para virar carrinho'}>
+        <Button size="sm" onClick={() => setCreating(true)}>
+          <Plus />
           Nova
-        </button>
-      </header>
+        </Button>
+      </Topbar>
 
-      <main className="page">
+      <Page className="max-w-3xl">
         {toast && (
-          <div className="banner ok">
-            <span>✅</span>
-            <span>{toast}</span>
-          </div>
+          <Banner tom="ok" icon={<Check />} className="mb-3">
+            {toast}
+          </Banner>
         )}
         {error && (
-          <div className="banner danger">
-            <span>⚠️</span>
-            <span>{error}</span>
-          </div>
+          <Banner tom="danger" icon={<TriangleAlert />} className="mb-3">
+            {error}
+          </Banner>
         )}
 
         {!lists.length ? (
-          <div className="empty">
-            <div className="ico">📋</div>
-            <h3>Nenhuma lista salva</h3>
+          <EmptyState icon={<ClipboardList />} title="Nenhuma lista salva">
             <p>
-              Crie listas que você repete sempre — limpeza, churrasco, feira da semana — e leve ao carrinho com um toque. As
-              que sobrarem de uma compra também aparecem aqui.
+              Crie listas que você repete sempre — limpeza, churrasco, feira da semana — e leve ao carrinho com um
+              toque. As que sobrarem de uma compra também aparecem aqui.
             </p>
-            <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => setCreating(true)}>
+            <Button className="mt-4" onClick={() => setCreating(true)}>
+              <Plus />
               Criar a primeira
-            </button>
-          </div>
+            </Button>
+          </EmptyState>
         ) : (
-          <div className="card">
+          <Card className="overflow-hidden py-0">
             {lists.map((list) => (
-              <div className="item" key={list.id}>
+              <Row key={list.id} className="gap-0 p-0">
                 <button
-                  className="thumb thumb-fallback"
-                  style={{ cursor: 'pointer' }}
+                  type="button"
                   onClick={() => navigate(`/listas/${list.id}`)}
                   aria-label={`Abrir ${list.name}`}
+                  className="hover:bg-muted/50 flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left transition-colors"
                 >
-                  {list.emoji}
+                  <span className="grid size-11 shrink-0 place-items-center rounded-xl border bg-neutral-50 text-lg">
+                    {list.emoji}
+                  </span>
+                  <RowBody>
+                    <RowName>{list.name}</RowName>
+                    <RowMeta>
+                      <span>
+                        {list.itemCount} {list.itemCount === 1 ? 'item' : 'itens'}
+                      </span>
+                      {list.reusable ? (
+                        <span className="text-muted-foreground/70">editada {relativeDate(list.updatedAt)}</span>
+                      ) : (
+                        <Badge variant="secondary">uso único</Badge>
+                      )}
+                    </RowMeta>
+                  </RowBody>
                 </button>
-                <div className="body" onClick={() => navigate(`/listas/${list.id}`)} style={{ cursor: 'pointer' }}>
-                  <div className="name">{list.name}</div>
-                  <div className="meta">
-                    <span>
-                      {list.itemCount} {list.itemCount === 1 ? 'item' : 'itens'}
-                    </span>
-                    {list.reusable ? (
-                      <span className="faint">editada {relativeDate(list.updatedAt)}</span>
-                    ) : (
-                      <span className="badge warn">uso único</span>
-                    )}
-                  </div>
-                </div>
-                <button className="btn btn-sm btn-primary" disabled={list.itemCount === 0} onClick={() => void toCart(list)}>
-                  → 🛒
-                </button>
-              </div>
+                <Button
+                  size="sm"
+                  className="mr-3 shrink-0"
+                  disabled={list.itemCount === 0}
+                  onClick={() => void toCart(list)}
+                  aria-label={`Levar ${list.name} ao carrinho`}
+                >
+                  <ShoppingCart />
+                  {trip ? 'Juntar' : 'Levar'}
+                </Button>
+              </Row>
             ))}
-          </div>
+          </Card>
         )}
-      </main>
+      </Page>
 
       {creating && (
-        <Sheet title="Nova lista" subtitle="Um conjunto de itens que você usa de novo e de novo." onClose={() => setCreating(false)}>
-          <label className="field">
-            <span>Nome</span>
-            <input
-              className="input"
+        <Sheet
+          title="Nova lista"
+          subtitle="Um conjunto de itens que você usa de novo e de novo."
+          onClose={() => setCreating(false)}
+        >
+          <Field label="Nome">
+            <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Limpeza, churrasco, farmácia…"
               autoFocus
             />
-          </label>
-          <label className="field">
-            <span>Ícone</span>
-            <div className="chips">
+          </Field>
+          <Field label="Ícone">
+            <div className="flex flex-wrap gap-1.5">
               {EMOJIS.map((e) => (
-                <button key={e} className={`chip${emoji === e ? ' on' : ''}`} onClick={() => setEmoji(e)} style={{ fontSize: 18 }}>
+                <button
+                  key={e}
+                  type="button"
+                  onClick={() => setEmoji(e)}
+                  className={cn(
+                    'grid size-10 place-items-center rounded-xl border text-lg transition-colors',
+                    emoji === e ? 'border-primary bg-primary/10 ring-primary/30 ring-2' : 'hover:bg-muted',
+                  )}
+                >
                   {e}
                 </button>
               ))}
             </div>
-          </label>
-          <button className="btn btn-primary btn-block btn-lg" disabled={!name.trim()} onClick={() => void create()}>
+          </Field>
+          <Button size="lg" className="w-full" disabled={!name.trim()} onClick={() => void create()}>
             Criar lista
-          </button>
+          </Button>
         </Sheet>
       )}
     </>

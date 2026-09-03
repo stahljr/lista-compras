@@ -5,8 +5,24 @@ import { enfileirar } from '../lib/offline';
 import { aplicarPatch } from '../lib/tripLocal';
 import { useStore } from '../lib/store';
 import { money, quantity } from '../lib/format';
-import { Thumb } from '../components/Thumb';
-import { Sheet } from '../components/Sheet';
+import {
+  Check,
+  ClipboardList,
+  PartyPopper,
+  Plus,
+
+  Search,
+  ShoppingCart,
+  Signal,
+  TriangleAlert,
+} from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Banner, EmptyState, Field, Page, Row, RowBody, RowMeta, RowName, SectionTitle, Topbar } from '@/components/Layout';
+import { Thumb } from '@/components/Thumb';
+import { Sheet } from '@/components/Sheet';
 import type { FinishResult, ListSummary, Product, Trip as TripType, TripItem } from '../lib/types';
 
 type Parecido = { product: Product; priceHere: number };
@@ -164,51 +180,46 @@ export default function Cart() {
     const { complete, leftover, trip: fechado } = result;
     return (
       <>
-        <header className="topbar">
-          <div className="grow">
-            <h1>{complete ? 'Pegamos tudo' : 'Faltou coisa'}</h1>
-            <p className="sub">
-              {fechado.marketLabel ? `${fechado.marketLabel} · ` : ''}
-              {money(fechado.spent)}
-            </p>
-          </div>
-        </header>
-        <main className="page">
-          <div className="card card-pad">
-            <div style={{ textAlign: 'center', padding: '10px 0 4px' }}>
-              <div style={{ fontSize: 44 }}>{complete ? '🎉' : '🔁'}</div>
-              <h3 style={{ margin: '10px 0 6px' }}>
-                {complete
-                  ? `Tudo no carrinho — ${money(fechado.spent)}`
-                  : `${fechado.progress.picked} de ${fechado.progress.total} itens`}
-              </h3>
+        <Topbar
+          title={complete ? 'Pegamos tudo' : 'Faltou coisa'}
+          subtitle={`${fechado.marketLabel ? `${fechado.marketLabel} · ` : ''}${money(fechado.spent)}`}
+        />
+        <Page className="max-w-3xl">
+          <Card className="items-center gap-0 p-6 text-center">
+            <span className="text-[44px] leading-none" aria-hidden="true">
+              {complete ? '🎉' : '🔁'}
+            </span>
+            <h3 className="mt-2.5 text-base font-bold">
+              {complete
+                ? `Tudo no carrinho — ${money(fechado.spent)}`
+                : `${fechado.progress.picked} de ${fechado.progress.total} itens`}
+            </h3>
+            <p className="text-muted-foreground mt-1.5 text-sm">
               {complete ? (
-                <p className="muted" style={{ margin: 0 }}>
-                  Nada ficou para trás.
-                </p>
+                'Nada ficou para trás.'
               ) : (
-                <p className="muted" style={{ margin: 0 }}>
-                  Os {fechado.progress.missing} que faltaram viraram a lista{' '}
-                  <strong>{leftover?.name}</strong> — pronta para outro mercado ou outro dia.
-                </p>
+                <>
+                  Os {fechado.progress.missing} que faltaram viraram a lista <strong>{leftover?.name}</strong> — pronta
+                  para outro mercado ou outro dia.
+                </>
               )}
-            </div>
-          </div>
+            </p>
+          </Card>
 
-          <div className="stack" style={{ marginTop: 16 }}>
+          <div className="mt-4 flex flex-col gap-2">
             {leftover && (
-              <button className="btn btn-primary btn-block btn-lg" onClick={() => navigate(`/listas/${leftover.id}`)}>
+              <Button size="lg" onClick={() => navigate(`/listas/${leftover.id}`)}>
                 Abrir “{leftover.name}”
-              </button>
+              </Button>
             )}
-            <button className="btn btn-block" onClick={() => navigate('/historico')}>
+            <Button variant="outline" onClick={() => navigate('/historico')}>
               Ver compras anteriores
-            </button>
-            <button className="btn btn-ghost btn-block" onClick={() => navigate('/lista')}>
+            </Button>
+            <Button variant="ghost" onClick={() => navigate('/lista')}>
               Voltar para a lista
-            </button>
+            </Button>
           </div>
-        </main>
+        </Page>
       </>
     );
   }
@@ -216,22 +227,15 @@ export default function Cart() {
   if (!trip) {
     return (
       <>
-        <header className="topbar">
-          <div className="grow">
-            <h1>Carrinho</h1>
-            <p className="sub">nenhum carrinho em andamento</p>
-          </div>
-        </header>
-        <main className="page">
-          <div className="empty">
-            <div className="ico">🛒</div>
-            <h3>Carrinho vazio</h3>
+        <Topbar title="Carrinho" subtitle="nenhum carrinho em andamento" />
+        <Page className="max-w-3xl">
+          <EmptyState icon={<ShoppingCart />} title="Carrinho vazio">
             <p>Ao chegar no mercado, abra a lista e toque em “Montar carrinho” para escolher o que levar.</p>
-            <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate('/lista')}>
+            <Button className="mt-4" onClick={() => navigate('/lista')}>
               Ir para a lista
-            </button>
-          </div>
-        </main>
+            </Button>
+          </EmptyState>
+        </Page>
       </>
     );
   }
@@ -240,173 +244,171 @@ export default function Cart() {
 
   return (
     <>
-      <header className="topbar">
-        <div className="grow">
-          <h1>{trip.marketLabel || 'Compra'}</h1>
-          <p className="sub">
-            {progress.picked} de {progress.total} pegos · {trip.lists.map((l) => l.name).join(' + ') || trip.listName}
-          </p>
-        </div>
-        <button className="btn btn-sm btn-primary" onClick={() => setSheet('finish')}>
+      <Topbar
+        title={trip.marketLabel || 'Compra'}
+        subtitle={`${progress.picked} de ${progress.total} pegos · ${trip.lists.map((l) => l.name).join(' + ') || trip.listName}`}
+      >
+        <Button size="sm" onClick={() => setSheet('finish')}>
           Fechar
-        </button>
-      </header>
+        </Button>
+      </Topbar>
 
-      <main className="page">
-        <div className="card card-pad">
-          <div className="progress" style={{ marginBottom: 12 }}>
-            <div style={{ width: `${progress.percent}%` }} />
+      <Page className="max-w-3xl">
+        <Card className="gap-0 p-4">
+          <div className="bg-muted mb-3 h-2 overflow-hidden rounded-full">
+            <div className="bg-primary h-full rounded-full transition-all" style={{ width: `${progress.percent}%` }} />
           </div>
-          <div className="stat-row">
-            <div className="stat spent">
-              <div className="label">Gasto</div>
-              <div className="value">{money(trip.spent)}</div>
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="bg-success/10 rounded-xl px-3.5 py-2.5">
+              <p className="text-success/80 text-[11px] font-bold tracking-wider uppercase">Gasto</p>
+              <p className="text-success text-xl font-extrabold tabular-nums">{money(trip.spent)}</p>
             </div>
-            <div className="stat">
-              <div className="label">Falta pegar</div>
-              <div className="value">{money(trip.remainingEstimate)}</div>
+            <div className="bg-muted/60 rounded-xl px-3.5 py-2.5">
+              <p className="text-muted-foreground text-[11px] font-bold tracking-wider uppercase">Falta pegar</p>
+              <p className="text-xl font-extrabold tabular-nums">{money(trip.remainingEstimate)}</p>
             </div>
           </div>
 
           {progress.complete ? (
-            <div className="banner ok" style={{ marginTop: 12, marginBottom: 0 }}>
-              <span>🎉</span>
-              <span>
-                <strong>Pegamos tudo!</strong> Total de {money(trip.spent)}. Toque em “Encerrar” para fechar a compra.
-              </span>
-            </div>
+            <Banner tom="ok" icon={<PartyPopper />} className="mt-3">
+              <strong>Pegamos tudo!</strong> Total de {money(trip.spent)}. Toque em “Fechar” para encerrar a compra.
+            </Banner>
           ) : (
-            <div className="banner info" style={{ marginTop: 12, marginBottom: 0 }}>
-              <span>📝</span>
-              <span>
-                Ainda faltam <strong>{progress.missing}</strong> {progress.missing === 1 ? 'item' : 'itens'}
-                {groups.length > 1 ? ` em ${groups.length} seções` : ''}.
-              </span>
-            </div>
+            <Banner icon={<ClipboardList />} className="mt-3">
+              Ainda faltam <strong>{progress.missing}</strong> {progress.missing === 1 ? 'item' : 'itens'}
+              {groups.length > 1 ? ` em ${groups.length} seções` : ''}.
+            </Banner>
           )}
 
           {pendingWrites > 0 && (
-            <div className="banner warn" style={{ marginTop: 10, marginBottom: 0 }}>
-              <span>📶</span>
-              <span>
-                {pendingWrites} {pendingWrites === 1 ? 'marcação salva' : 'marcações salvas'} só neste aparelho
-                {online ? ' — enviando…' : ' — sobem quando o sinal voltar'}.
-              </span>
-            </div>
+            <Banner tom="warn" icon={<Signal />} className="mt-2.5">
+              {pendingWrites} {pendingWrites === 1 ? 'marcação salva' : 'marcações salvas'} só neste aparelho
+              {online ? ' — enviando…' : ' — sobem quando o sinal voltar'}.
+            </Banner>
           )}
 
           {progress.notHere > 0 && (
-            <div className="banner warn" style={{ marginTop: 10 }}>
-              <span>🔎</span>
-              <span>
-                {progress.notHere === 1
-                  ? '1 item que falta este mercado não tem'
-                  : `${progress.notHere} itens que faltam este mercado não tem`}
-                . Toque em <strong>parecido</strong> para trocar por algo que existe aqui — ou deixe sem marcar, que no
-                fecho volta como lista.
-              </span>
-            </div>
+            <Banner tom="warn" icon={<Search />} className="mt-2.5">
+              {progress.notHere === 1
+                ? '1 item que falta este mercado não tem'
+                : `${progress.notHere} itens que faltam este mercado não tem`}
+              . Toque em <strong>parecido</strong> para trocar por algo que existe aqui — ou deixe sem marcar, que no
+              fecho volta como lista.
+            </Banner>
           )}
 
           {progress.withoutPrice > 0 && (
-            <div className="small faint" style={{ marginTop: 10 }}>
-              {progress.withoutPrice} {progress.withoutPrice === 1 ? 'item foi escrito' : 'itens foram escritos'} à mão e não
-              {progress.withoutPrice === 1 ? ' entra' : ' entram'} na soma.
-            </div>
+            <p className="text-muted-foreground/80 mt-2.5 text-xs">
+              {progress.withoutPrice} {progress.withoutPrice === 1 ? 'item foi escrito' : 'itens foram escritos'} à mão
+              e não{progress.withoutPrice === 1 ? ' entra' : ' entram'} na soma.
+            </p>
           )}
-        </div>
+        </Card>
 
         {error && (
-          <div className="banner danger" style={{ marginTop: 12 }}>
-            <span>⚠️</span>
-            <span>{error}</span>
-          </div>
+          <Banner tom="danger" icon={<TriangleAlert />} className="mt-3">
+            {error}
+          </Banner>
         )}
 
         {groups.map((group) => (
           <div key={group.key}>
-            <div className="section-title">
-              <span>
-                {group.emoji} {group.label}
-              </span>
-              <span className="count right">{group.items.length}</span>
-            </div>
-            <div className="card">
+            <SectionTitle action={<span className="text-muted-foreground text-sm">{group.items.length}</span>}>
+              {group.emoji} {group.label}
+            </SectionTitle>
+            <Card className="overflow-hidden py-0">
               {group.items.map((item) => (
-                <div className="item" key={item.id}>
+                <Row key={item.id}>
+                  {/* O alvo de toque grande e de proposito: marcar itens e o que
+                      se faz de pe, com uma mao, empurrando o carrinho. */}
                   <button
-                    className="check"
+                    type="button"
                     aria-label={`Marcar ${item.name} como pego`}
                     onClick={() => {
                       setFocusPrice(item.id);
                       void update(item, { picked: true });
                     }}
+                    className="text-muted-foreground/40 hover:border-primary hover:text-primary grid size-8 shrink-0 place-items-center rounded-full border-2 transition-colors"
                   >
-                    ✓
+                    <Check className="size-4" />
                   </button>
                   <Thumb src={item.imageUrl} category={item.category} alt={item.name} />
-                  <div className="body">
-                    <div className="name">{item.name}</div>
-                    <div className="meta">
+                  <RowBody>
+                    <RowName>{item.name}</RowName>
+                    <RowMeta>
                       <span>{quantity(item.qty, item.unit)}</span>
-                      {item.expected != null && <span className="faint">{money(item.expected)}</span>}
-                      {item.availableHere === false && <span className="badge warn">não tem aqui</span>}
+                      {item.expected != null && (
+                        <span className="text-muted-foreground/70 tabular-nums">{money(item.expected)}</span>
+                      )}
+                      {item.availableHere === false && <Badge variant="secondary">não tem aqui</Badge>}
                       {item.market && item.market !== trip.market && (
-                        <span
-                          className="badge market"
-                          style={{ background: markets.find((m) => m.key === item.market)?.color }}
+                        <Badge
+                          style={{
+                            background: markets.find((m) => m.key === item.market)?.color,
+                            color: '#fff',
+                            borderColor: 'transparent',
+                          }}
                         >
                           é do {markets.find((m) => m.key === item.market)?.label}
-                        </span>
+                        </Badge>
                       )}
-                      {item.swappedFrom && <span className="faint">no lugar de {item.swappedFrom}</span>}
-                    </div>
-                  </div>
+                      {item.swappedFrom && (
+                        <span className="text-muted-foreground/70 truncate">no lugar de {item.swappedFrom}</span>
+                      )}
+                    </RowMeta>
+                  </RowBody>
                   {trip.market && item.availableHere === false && (
-                    <button
-                      className="btn btn-sm"
-                      style={{ flex: 'none' }}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
                       disabled={busy}
                       onClick={() => void verParecidos(item)}
                     >
-                      🔎 parecido
-                    </button>
+                      <Search />
+                      parecido
+                    </Button>
                   )}
-                </div>
+                </Row>
               ))}
-            </div>
+            </Card>
           </div>
         ))}
 
         {picked.length > 0 && (
           <>
-            <div className="section-title">
-              <span>✅ No carrinho</span>
-              <span className="count right">{money(trip.spent)}</span>
-            </div>
-            <p className="small faint" style={{ margin: '0 4px 8px' }}>
+            <SectionTitle action={<span className="text-sm font-bold tabular-nums">{money(trip.spent)}</span>}>
+              ✅ No carrinho
+            </SectionTitle>
+            <p className="text-muted-foreground/80 mb-2 px-1 text-xs">
               O preço já vem da lista. Só mexa no campo se a etiqueta estiver diferente.
             </p>
-            <div className="card">
+            <Card className="overflow-hidden py-0">
               {picked.map((item) => (
-                <div className="item done" key={item.id}>
-                  <button className="check on" aria-label={`Desmarcar ${item.name}`} onClick={() => void update(item, { picked: false })}>
-                    ✓
+                <Row key={item.id} className="bg-success/5">
+                  <button
+                    type="button"
+                    aria-label={`Desmarcar ${item.name}`}
+                    onClick={() => void update(item, { picked: false })}
+                    className="bg-success text-success-foreground grid size-8 shrink-0 place-items-center rounded-full"
+                  >
+                    <Check className="size-4" />
                   </button>
-                  <div className="body">
-                    <div className="name">{item.name}</div>
-                    <div className="meta">
+                  <RowBody>
+                    <RowName className="text-muted-foreground line-through">{item.name}</RowName>
+                    <RowMeta>
                       <span>{quantity(item.qty, item.unit)}</span>
-                      {item.subtotal != null && <strong className="money">{money(item.subtotal)}</strong>}
-                      {item.corrected && <span className="badge ok">preço corrigido</span>}
+                      {item.subtotal != null && (
+                        <strong className="text-foreground tabular-nums">{money(item.subtotal)}</strong>
+                      )}
+                      {item.corrected && <Badge variant="success">preço corrigido</Badge>}
                       {item.pickedBy && <span style={{ color: item.pickedBy.color }}>{item.pickedBy.name}</span>}
-                    </div>
-                  </div>
-                  <div className="row" style={{ flex: 'none', gap: 4 }}>
-                    <span className="small faint">R$</span>
-                    <input
-                      className="input"
-                      style={{ width: 76, padding: '7px 9px', textAlign: 'right' }}
+                    </RowMeta>
+                  </RowBody>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span className="text-muted-foreground/70 text-xs">R$</span>
+                    <Input
+                      className="h-9 w-20 px-2 text-right tabular-nums"
                       inputMode="decimal"
                       placeholder="0,00"
                       value={priceValue(item)}
@@ -420,39 +422,39 @@ export default function Cart() {
                       aria-label={`Preço de ${item.name}`}
                     />
                   </div>
-                </div>
+                </Row>
               ))}
-            </div>
+            </Card>
           </>
         )}
 
-        <div className="stack" style={{ marginTop: 20 }}>
-          <button className="btn btn-block" onClick={() => setSheet('add')}>
-            ➕ Lembrei de outra coisa
-          </button>
+        <div className="mt-6 flex flex-col gap-2">
+          <Button variant="outline" onClick={() => setSheet('add')}>
+            <Plus />
+            Lembrei de outra coisa
+          </Button>
           {lists.some((l) => l.itemCount > 0 && !trip.lists.some((s) => s.id === l.id)) && (
-            <button className="btn btn-block" onClick={() => setSheet('addList')}>
-              📋 Trazer outra lista para o carrinho
-            </button>
+            <Button variant="outline" onClick={() => setSheet('addList')}>
+              <ClipboardList />
+              Trazer outra lista para o carrinho
+            </Button>
           )}
         </div>
-      </main>
+      </Page>
 
       {sheet === 'add' && (
         <Sheet title="Adicionar na compra" subtitle="Entra direto nesta ida ao mercado." onClose={() => setSheet(null)}>
-          <label className="field">
-            <span>Item</span>
-            <input
-              className="input"
+          <Field label="Item">
+            <Input
               value={newItem}
               onChange={(e) => setNewItem(e.target.value)}
               placeholder="Pilha AA, guardanapo…"
               autoFocus
             />
-          </label>
-          <div className="stack">
-            <button
-              className="btn btn-primary btn-block btn-lg"
+          </Field>
+          <div className="flex flex-col gap-2">
+            <Button
+              size="lg"
               disabled={!newItem.trim()}
               onClick={async () => {
                 const { trip: updated } = await api.post<{ trip: TripType }>(`/trips/${trip.id}/items`, { name: newItem.trim() });
@@ -462,10 +464,10 @@ export default function Cart() {
               }}
             >
               Adicionar
-            </button>
-            <button className="btn btn-ghost btn-block" onClick={() => navigate('/')}>
+            </Button>
+            <Button variant="ghost" onClick={() => navigate('/')}>
               Escolher no Mercado
-            </button>
+            </Button>
           </div>
         </Sheet>
       )}
@@ -476,22 +478,15 @@ export default function Cart() {
           subtitle="Os itens entram neste carrinho. Repetido soma a quantidade."
           onClose={() => setSheet(null)}
         >
-          <div className="stack">
+          <div className="flex flex-col gap-2">
             {lists
               .filter((l) => l.itemCount > 0 && !trip.lists.some((s) => s.id === l.id))
               .map((l) => (
-                <button
-                  key={l.id}
-                  className="btn btn-block btn-lg"
-                  style={{ justifyContent: 'flex-start' }}
-                  onClick={() => void addList(l)}
-                >
-                  <span>{l.emoji}</span>
-                  <span className="grow" style={{ textAlign: 'left' }}>
-                    {l.name}
-                  </span>
-                  <span className="small">{l.itemCount}</span>
-                </button>
+                <Button key={l.id} variant="outline" size="lg" className="justify-start" onClick={() => void addList(l)}>
+                  <span aria-hidden="true">{l.emoji}</span>
+                  <span className="flex-1 truncate text-left">{l.name}</span>
+                  <span className="text-muted-foreground text-sm">{l.itemCount}</span>
+                </Button>
               ))}
           </div>
         </Sheet>
@@ -504,38 +499,29 @@ export default function Cart() {
           onClose={() => setParecidos(null)}
         >
           {!parecidos.options.length ? (
-            <p className="small faint">
+            <p className="text-muted-foreground text-sm">
               Este mercado não tem nada parecido no catálogo. Deixe o item sem marcar: no fecho ele volta como lista
               para outro dia.
             </p>
           ) : (
-            <div className="card">
+            <Card className="overflow-hidden py-0">
               {parecidos.options.map(({ product, priceHere }) => (
-                <button
-                  key={product.id}
-                  className="item"
-                  style={{ width: '100%', background: 'none', border: 'none', textAlign: 'left' }}
-                  disabled={busy}
-                  onClick={() => void trocarPor(parecidos.item, product.id)}
-                >
+                <Row key={product.id} onClick={() => void trocarPor(parecidos.item, product.id)}>
                   <Thumb src={product.imageUrl} category={product.category} alt={product.name} />
-                  <div className="body">
-                    <div className="name">{product.name}</div>
-                    <div className="meta">
+                  <RowBody>
+                    <RowName>{product.name}</RowName>
+                    <RowMeta>
                       {product.brand && <span>{product.brand}</span>}
-                      {product.sizeLabel && <span className="badge">{product.sizeLabel}</span>}
-                    </div>
-                  </div>
-                  <strong className="money" style={{ flex: 'none' }}>
-                    {money(priceHere)}
-                  </strong>
-                </button>
+                      {product.sizeLabel && <Badge variant="secondary">{product.sizeLabel}</Badge>}
+                    </RowMeta>
+                  </RowBody>
+                  <strong className="shrink-0 text-[15px] font-bold tabular-nums">{money(priceHere)}</strong>
+                </Row>
               ))}
-            </div>
+            </Card>
           )}
-          <p className="small faint" style={{ marginTop: 10 }}>
-            A quantidade continua a mesma. O item trocado fica marcado como "no lugar de{' '}
-            {parecidos.item.name}".
+          <p className="text-muted-foreground mt-2.5 text-xs">
+            A quantidade continua a mesma. O item trocado fica marcado como “no lugar de {parecidos.item.name}”.
           </p>
         </Sheet>
       )}
@@ -550,15 +536,17 @@ export default function Cart() {
           }
           onClose={() => setSheet(null)}
         >
-          <div className="stack">
-            <button className="btn btn-primary btn-block btn-lg" disabled={busy} onClick={() => void finish()}>
+          <div className="flex flex-col gap-2">
+            <Button size="lg" disabled={busy} onClick={() => void finish()}>
               {progress.missing === 0 ? 'Fechar' : 'Fechar e guardar o que faltou'}
-            </button>
-            <button className="btn btn-ghost btn-block" disabled={busy} onClick={() => setSheet(null)}>
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => setSheet(null)}>
               Continuar comprando
-            </button>
-            <button
-              className="btn btn-danger btn-block btn-sm"
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10"
               disabled={busy}
               onClick={async () => {
                 await api.post(`/trips/${trip.id}/cancel`);
@@ -568,7 +556,7 @@ export default function Cart() {
               }}
             >
               Descartar este carrinho
-            </button>
+            </Button>
           </div>
         </Sheet>
       )}

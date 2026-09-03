@@ -1,5 +1,10 @@
 import { useState } from 'react';
-import { useStore } from '../lib/store';
+import { Hand, TriangleAlert } from 'lucide-react';
+import { useStore } from '@/lib/store';
+import { Banner, Field } from '@/components/Layout';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 
 export default function Login() {
   const { login, register, needsSetup } = useStore();
@@ -26,34 +31,29 @@ export default function Login() {
   }
 
   return (
-    <div className="page" style={{ maxWidth: 420, paddingTop: 40 }}>
-      <div style={{ textAlign: 'center', marginBottom: 24 }}>
-        <img src="/icone-192.png" alt="" width={64} height={64} style={{ borderRadius: 16 }} />
-        <h1 style={{ margin: '14px 0 4px', fontSize: 22 }}>Nossa lista de compras</h1>
-        <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-          Angeloni, Festval, Muffato e Condor num só lugar
-        </p>
+    <div className="mx-auto w-full max-w-[26rem] px-4 pt-10 pb-16">
+      <div className="mb-6 text-center">
+        <img src="/icone-192.png" alt="" width={64} height={64} className="mx-auto rounded-2xl shadow-sm" />
+        <h1 className="mt-3.5 text-[22px] leading-tight font-bold tracking-tight">Nossa lista de compras</h1>
+        <p className="text-muted-foreground mt-1 text-sm">Angeloni, Festval, Muffato e Condor num só lugar</p>
       </div>
 
-      <div className="card card-pad">
+      <Card className="gap-0 p-5">
         {needsSetup && mode === 'register' && (
-          <div className="banner info">
-            <span>👋</span>
-            <span>Primeira vez aqui: esta conta vira a dona da casa. Depois é só passar o código de convite para a Camila.</span>
-          </div>
+          <Banner icon={<Hand />} className="mb-4">
+            Primeira vez aqui: esta conta vira a dona da casa. Depois é só passar o código de convite para a outra
+            pessoa.
+          </Banner>
         )}
 
         <form onSubmit={submit}>
           {mode === 'register' && (
-            <label className="field">
-              <span>Seu nome</span>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required />
-            </label>
+            <Field label="Seu nome">
+              <Input value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" required />
+            </Field>
           )}
-          <label className="field">
-            <span>E-mail</span>
-            <input
-              className="input"
+          <Field label="E-mail">
+            <Input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -61,11 +61,9 @@ export default function Login() {
               inputMode="email"
               required
             />
-          </label>
-          <label className="field">
-            <span>Senha</span>
-            <input
-              className="input"
+          </Field>
+          <Field label="Senha" hint={mode === 'register' ? 'Ao menos 8 caracteres.' : undefined}>
+            <Input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -73,39 +71,37 @@ export default function Login() {
               minLength={8}
               required
             />
-          </label>
+          </Field>
           {mode === 'register' && !needsSetup && (
-            <label className="field">
-              <span>Código de convite</span>
-              <input className="input" value={invite} onChange={(e) => setInvite(e.target.value)} required />
-            </label>
+            <Field label="Código de convite" hint="Quem já usa o app passa esse código para você.">
+              <Input value={invite} onChange={(e) => setInvite(e.target.value)} required />
+            </Field>
           )}
 
           {error && (
-            <div className="banner danger">
-              <span>⚠️</span>
-              <span>{error}</span>
-            </div>
+            <Banner tom="danger" icon={<TriangleAlert />} className="mb-3">
+              {error}
+            </Banner>
           )}
 
-          <button className="btn btn-primary btn-block btn-lg" disabled={busy}>
+          <Button type="submit" size="lg" className="w-full" disabled={busy}>
             {busy ? 'Aguarde…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
-          </button>
+          </Button>
         </form>
 
         {!needsSetup && (
-          <button
-            className="btn btn-ghost btn-block"
-            style={{ marginTop: 8 }}
+          <Button
+            variant="ghost"
+            className="mt-2 w-full"
             onClick={() => {
               setMode(mode === 'login' ? 'register' : 'login');
               setError('');
             }}
           >
             {mode === 'login' ? 'Tenho um convite, quero criar conta' : 'Já tenho conta'}
-          </button>
+          </Button>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardList, ListChecks, Pencil, Plus, ShoppingCart, Store, Wallet } from 'lucide-react';
+import { CheckSquare, ClipboardList, ListChecks, Pencil, Plus, ShoppingCart, Square, Store, TriangleAlert, Wallet } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useStore } from '@/lib/store';
 import { money } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { EmptyState, Page, SectionTitle, Topbar } from '@/components/Layout';
+import { Banner, EmptyState, Field, Page, SectionTitle, Topbar } from '@/components/Layout';
 import { ListItemRow } from '@/components/ListItemRow';
 import { Sheet } from '@/components/Sheet';
 import { Thumb } from '@/components/Thumb';
@@ -221,28 +221,25 @@ export default function List() {
         </form>
 
         {error && (
-          <div className="banner danger">
-            <span>⚠️</span>
-            <span>{error}</span>
-          </div>
+          <Banner tom="danger" icon={<TriangleAlert />} className="mb-3">
+            {error}
+          </Banner>
         )}
 
         {trip && (
-          <div className="card card-pad" style={{ marginBottom: 12 }}>
-            <div className="row">
-              <span style={{ fontSize: 22 }}>🛒</span>
-              <div className="grow">
-                <strong>Carrinho em andamento</strong>
-                <div className="small muted">
-                  {trip.marketLabel ? `${trip.marketLabel} · ` : ''}
-                  {trip.progress.picked} de {trip.progress.total} pegos · {money(trip.spent)}
-                </div>
-              </div>
-              <button className="btn btn-sm btn-primary" onClick={() => navigate('/carrinho')}>
-                Abrir
-              </button>
+          <Card className="mb-3 flex-row items-center gap-3 p-3.5">
+            <ShoppingCart className="text-primary size-6 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <strong className="text-sm">Carrinho em andamento</strong>
+              <p className="text-muted-foreground text-xs">
+                {trip.marketLabel ? `${trip.marketLabel} · ` : ''}
+                {trip.progress.picked} de {trip.progress.total} pegos · {money(trip.spent)}
+              </p>
             </div>
-          </div>
+            <Button size="sm" onClick={() => navigate('/carrinho')}>
+              Abrir
+            </Button>
+          </Card>
         )}
 
         {count === 0 ? (
@@ -291,7 +288,7 @@ export default function List() {
                 <ShoppingCart />
                 Montar carrinho
               </Button>
-              <p className="small faint" style={{ margin: '0 4px' }}>
+              <p className="text-muted-foreground/80 px-1 text-xs">
                 O preço é congelado aqui, na lista — no mercado o app não fica consultando preço, só carrega este número.
                 {planned.semPreco > 0 &&
                   ` ${planned.semPreco} ${planned.semPreco === 1 ? 'item escrito' : 'itens escritos'} à mão ${planned.semPreco === 1 ? 'não tem' : 'não têm'} preço.`}
@@ -310,60 +307,62 @@ export default function List() {
           subtitle="Escolha as listas que vão para o mercado. Item repetido em duas listas soma a quantidade."
           onClose={() => setSheet(null)}
         >
-          <div className="stack" style={{ marginBottom: 16 }}>
+          <div className="mb-4 flex flex-col gap-2">
             {general && (
-              <button
-                className={`btn btn-block${chosen.includes(general.id) ? ' btn-primary' : ''}`}
-                style={{ justifyContent: 'flex-start' }}
+              <Button
+                variant={chosen.includes(general.id) ? 'default' : 'outline'}
+                className="justify-start"
                 disabled={!count}
                 onClick={() =>
-                  setChosen((prev) => (prev.includes(general.id) ? prev.filter((i) => i !== general.id) : [...prev, general.id]))
+                  setChosen((prev) =>
+                    prev.includes(general.id) ? prev.filter((i) => i !== general.id) : [...prev, general.id],
+                  )
                 }
               >
-                <span>{chosen.includes(general.id) ? '☑' : '☐'}</span>
-                <span className="grow" style={{ textAlign: 'left' }}>
-                  📝 {general.name}
-                </span>
-                <span className="small">{count}</span>
-              </button>
+                {chosen.includes(general.id) ? <CheckSquare /> : <Square />}
+                <span className="flex-1 truncate text-left">📝 {general.name}</span>
+                <span className="text-sm opacity-80">{count}</span>
+              </Button>
             )}
             {lists.map((l) => (
-              <button
+              <Button
                 key={l.id}
-                className={`btn btn-block${chosen.includes(l.id) ? ' btn-primary' : ''}`}
-                style={{ justifyContent: 'flex-start' }}
+                variant={chosen.includes(l.id) ? 'default' : 'outline'}
+                className="justify-start"
                 disabled={!l.itemCount}
                 onClick={() => setChosen((prev) => (prev.includes(l.id) ? prev.filter((i) => i !== l.id) : [...prev, l.id]))}
               >
-                <span>{chosen.includes(l.id) ? '☑' : '☐'}</span>
-                <span className="grow" style={{ textAlign: 'left' }}>
+                {chosen.includes(l.id) ? <CheckSquare /> : <Square />}
+                <span className="flex-1 truncate text-left">
                   {l.emoji} {l.name}
                 </span>
-                <span className="small">{l.itemCount}</span>
-              </button>
+                <span className="text-sm opacity-80">{l.itemCount}</span>
+              </Button>
             ))}
           </div>
 
-          <div className="section-title" style={{ marginTop: 0 }}>
-            Em qual mercado você está?
-          </div>
-          <div className="stack">
+          <p className="mb-2 text-[13px] font-semibold">Em qual mercado você está?</p>
+          <div className="flex flex-col gap-2">
             {markets.map((m) => (
-              <button
+              <Button
                 key={m.key}
-                className="btn btn-block btn-lg"
-                style={{ borderColor: m.color, color: m.color, justifyContent: 'flex-start' }}
+                variant="outline"
+                size="lg"
+                className="justify-start"
+                style={{ borderColor: m.color, color: m.color }}
                 disabled={busy || !totalEscolhido}
                 onClick={() => buildCart(m.key)}
               >
-                <span style={{ width: 10, height: 10, borderRadius: 5, background: m.color }} />
+                <span className="size-2.5 rounded-full" style={{ background: m.color }} />
                 {m.label}
-              </button>
+              </Button>
             ))}
-            <button className="btn btn-ghost btn-block" disabled={busy || !totalEscolhido} onClick={() => buildCart(null)}>
+            <Button variant="ghost" disabled={busy || !totalEscolhido} onClick={() => buildCart(null)}>
               Outro lugar / não sei ainda
-            </button>
-            {!totalEscolhido && <p className="small faint">Escolha ao menos uma lista com itens.</p>}
+            </Button>
+            {!totalEscolhido && (
+              <p className="text-muted-foreground/80 text-xs">Escolha ao menos uma lista com itens.</p>
+            )}
           </div>
         </Sheet>
       )}
@@ -374,18 +373,17 @@ export default function List() {
           subtitle="Fica cadastrada para você usar de novo. Diferente da lista geral, usá-la no carrinho não a apaga."
           onClose={() => setSheet(null)}
         >
-          <label className="field">
-            <span>Nome da lista</span>
-            <input
-              className="input"
+          <Field label="Nome da lista">
+            <Input
               placeholder="Limpeza, churrasco, feira…"
               value={saveName}
               onChange={(e) => setSaveName(e.target.value)}
               autoFocus
             />
-          </label>
-          <button
-            className="btn btn-primary btn-block btn-lg"
+          </Field>
+          <Button
+            size="lg"
+            className="w-full"
             disabled={!saveName.trim()}
             onClick={async () => {
               await api.post('/lists/geral/save-as', { name: saveName.trim() });
@@ -396,7 +394,7 @@ export default function List() {
             }}
           >
             Salvar lista
-          </button>
+          </Button>
         </Sheet>
       )}
 
@@ -406,19 +404,20 @@ export default function List() {
           subtitle={`Os ${count} itens saem da lista geral. Suas listas rápidas não são afetadas.`}
           onClose={() => setSheet(null)}
         >
-          <div className="stack">
-            <button
-              className="btn btn-primary btn-block btn-lg"
+          <div className="flex flex-col gap-2">
+            <Button
+              size="lg"
+              variant="destructive"
               onClick={async () => {
                 await act(api.post<{ list: ShoppingList }>('/lists/geral/clear'));
                 setSheet(null);
               }}
             >
               Sim, limpar
-            </button>
-            <button className="btn btn-ghost btn-block" onClick={() => setSheet(null)}>
+            </Button>
+            <Button variant="ghost" onClick={() => setSheet(null)}>
               Deixa como está
-            </button>
+            </Button>
           </div>
         </Sheet>
       )}

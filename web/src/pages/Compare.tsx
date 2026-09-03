@@ -1,9 +1,20 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { api } from '../lib/api';
-import { useStore } from '../lib/store';
-import { money, quantity } from '../lib/format';
-import type { Comparison, Trip } from '../lib/types';
+import { Coins, Lightbulb, MapPin, Puzzle, RefreshCw, TriangleAlert } from 'lucide-react';
+import { api } from '@/lib/api';
+import { useStore } from '@/lib/store';
+import { money, quantity } from '@/lib/format';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Banner, EmptyState, Page, Row, RowBody, RowMeta, RowName, SectionTitle, Topbar } from '@/components/Layout';
+import type { Comparison, Trip } from '@/lib/types';
+
+/** Rotulo pequeno em caixa alta, do jeito dos outros cartoes do app. */
+function Etiqueta({ children }: { children: React.ReactNode }) {
+  return <p className="text-muted-foreground text-xs font-bold tracking-wider uppercase">{children}</p>;
+}
 
 export default function Compare() {
   const { listId } = useParams();
@@ -45,122 +56,116 @@ export default function Compare() {
 
   return (
     <>
-      <header className="topbar">
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate(-1)} aria-label="Voltar">
-          ←
-        </button>
-        <div className="grow">
-          <h1>Onde comprar</h1>
-          <p className="sub">{data ? `${data.priced.length} de ${data.itemCount} itens com preço` : 'consultando os mercados…'}</p>
-        </div>
-        <button className="btn btn-sm" onClick={() => void load()} disabled={loading}>
-          {loading ? '…' : '↻'}
-        </button>
-      </header>
+      <Topbar
+        title="Onde comprar"
+        subtitle={data ? `${data.priced.length} de ${data.itemCount} itens com preço` : 'consultando os mercados…'}
+      >
+        <Button variant="ghost" size="icon" onClick={() => void load()} disabled={loading} aria-label="Consultar de novo">
+          <RefreshCw className={loading ? 'animate-spin' : undefined} />
+        </Button>
+      </Topbar>
 
-      <main className="page">
+      <Page className="max-w-3xl">
         {loading && !data && (
-          <div className="center">
-            <div className="stack" style={{ alignItems: 'center' }}>
-              <div className="spinner" />
-              <span className="small muted">buscando preço em Angeloni, Festval, Muffato e Condor…</span>
-            </div>
+          <div className="flex flex-col gap-3">
+            <p className="text-muted-foreground text-sm">
+              Buscando preço em Angeloni, Festval, Muffato e Condor…
+            </p>
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-24 w-full" />
           </div>
         )}
 
         {error && (
-          <div className="banner danger">
-            <span>⚠️</span>
-            <span>{error}</span>
-          </div>
+          <Banner tom="danger" icon={<TriangleAlert />} className="mb-3">
+            {error}
+          </Banner>
         )}
 
-        {data && !data.priced.length && (
-          <div className="empty">
-            <div className="ico">💰</div>
-            <h3>Nenhum item com preço</h3>
+        {data && !data.priced.length && !loading && (
+          <EmptyState icon={<Coins />} title="Nenhum item com preço">
             <p>Itens escritos à mão não têm preço. Busque os produtos no catálogo para poder comparar.</p>
-            <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={() => navigate('/')}>
+            <Button className="mt-4" onClick={() => navigate('/')}>
               Buscar produtos
-            </button>
-          </div>
+            </Button>
+          </EmptyState>
         )}
 
         {data && data.priced.length > 0 && (
           <>
             {best && (
-              <div className="card card-pad">
-                <div className="small muted" style={{ fontWeight: 650, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {best.complete ? 'Melhor mercado para fazer tudo' : 'Mercado que cobre mais itens'}
-                </div>
-                <div className="row" style={{ marginTop: 6 }}>
-                  <span style={{ fontSize: 26, fontWeight: 750, color: best.color }}>{best.label}</span>
-                  <span className="right money" style={{ fontSize: 22, fontWeight: 700 }}>
-                    {money(best.total)}
+              <Card className="gap-0 p-4">
+                <Etiqueta>{best.complete ? 'Melhor mercado para fazer tudo' : 'Mercado que cobre mais itens'}</Etiqueta>
+                <div className="mt-1.5 flex items-baseline gap-3">
+                  <span className="text-[26px] leading-none font-extrabold tracking-tight" style={{ color: best.color }}>
+                    {best.label}
                   </span>
+                  <span className="ml-auto text-[22px] font-bold tabular-nums">{money(best.total)}</span>
                 </div>
                 {!best.complete && (
-                  <div className="small muted" style={{ marginTop: 4 }}>
+                  <p className="text-muted-foreground mt-1.5 text-sm">
                     faltam {best.missingCount}: {best.missing.slice(0, 3).join(', ')}
                     {best.missing.length > 3 ? '…' : ''}
-                  </div>
+                  </p>
                 )}
-                <button className="btn btn-primary btn-block" style={{ marginTop: 12 }} onClick={() => void startAt(best.key)}>
-                  📍 Comprar no {best.label}
-                </button>
-              </div>
+                <Button className="mt-3.5 w-full" onClick={() => void startAt(best.key)}>
+                  <MapPin />
+                  Comprar no {best.label}
+                </Button>
+              </Card>
             )}
 
             {split && data.worthSplitting && (
               <>
-                <div className="section-title">💡 Vale dividir em dois</div>
-                <div className="card card-pad">
-                  <div className="row">
-                    <div className="grow">
-                      <strong>{split.markets.map((m) => m.label).join(' + ')}</strong>
-                      <div className="small muted">
+                <SectionTitle>
+                  <Lightbulb className="mr-1 inline size-5 align-[-3px]" />
+                  Vale dividir em dois
+                </SectionTitle>
+                <Card className="gap-0 p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <strong className="text-[15px]">{split.markets.map((m) => m.label).join(' + ')}</strong>
+                      <p className="text-muted-foreground text-sm">
                         economiza {money(split.savings)} ({split.savingsPct}%) nos mesmos itens que você levaria
                         {split.comparedTo ? ` só do ${split.comparedTo.label}` : ''}
-                      </div>
+                      </p>
                     </div>
-                    <span className="money" style={{ fontSize: 19, fontWeight: 700 }}>
-                      {money(split.total)}
-                    </span>
+                    <span className="text-[19px] font-bold tabular-nums">{money(split.total)}</span>
                   </div>
 
                   {split.extraItems.length > 0 && (
-                    <div className="small faint" style={{ marginTop: 6 }}>
+                    <p className="text-muted-foreground/80 mt-1.5 text-xs">
                       Do total, {money(split.extraCost)} são {split.extraItems.length}{' '}
                       {split.extraItems.length === 1 ? 'item que não existe' : 'itens que não existem'} no{' '}
                       {split.comparedTo?.label}.
-                    </div>
+                    </p>
                   )}
 
                   {split.markets.map((m) => (
-                    <div key={m.key} style={{ marginTop: 14 }}>
-                      <div className="row" style={{ marginBottom: 6 }}>
-                        <span className="badge market" style={{ background: m.color }}>
+                    <div key={m.key} className="mt-4">
+                      <div className="mb-1.5 flex items-center gap-2">
+                        <Badge style={{ background: m.color, color: '#fff', borderColor: 'transparent' }}>
                           {m.label}
-                        </span>
-                        <span className="right small money" style={{ fontWeight: 700 }}>
-                          {money(m.total)}
-                        </span>
+                        </Badge>
+                        <span className="ml-auto text-sm font-bold tabular-nums">{money(m.total)}</span>
                       </div>
                       {m.items.map((item) => (
-                        <div className="row small" key={item.id} style={{ padding: '3px 0' }}>
-                          <span className="grow" style={{ minWidth: 0 }}>
+                        <div key={item.id} className="flex items-center gap-2 py-0.5 text-sm">
+                          <span className="min-w-0 flex-1 truncate">
                             {item.name}
-                            {item.qty !== 1 && <span className="faint"> ×{quantity(item.qty)}</span>}
+                            {item.qty !== 1 && (
+                              <span className="text-muted-foreground/70"> ×{quantity(item.qty)}</span>
+                            )}
                           </span>
-                          <span className="money muted">{money(item.subtotal)}</span>
+                          <span className="text-muted-foreground tabular-nums">{money(item.subtotal)}</span>
                         </div>
                       ))}
-                      <button className="btn btn-sm btn-block" style={{ marginTop: 8 }} onClick={() => void startAt(m.key)}>
+                      <Button variant="outline" size="sm" className="mt-2 w-full" onClick={() => void startAt(m.key)}>
                         Começar pelo {m.label}
-                      </button>
+                      </Button>
                     </div>
                   ))}
-                </div>
+                </Card>
               </>
             )}
 
@@ -168,82 +173,85 @@ export default function Compare() {
                 levar tudo. Isso e informacao, nao recomendacao -- por isso separado. */}
             {split && !data.worthSplitting && split.extraItems.length > 0 && best && (
               <>
-                <div className="section-title">🧩 Para levar tudo</div>
-                <div className="card card-pad">
-                  <div className="small">
+                <SectionTitle>
+                  <Puzzle className="mr-1 inline size-5 align-[-3px]" />
+                  Para levar tudo
+                </SectionTitle>
+                <Card className="gap-0 p-4">
+                  <p className="text-sm">
                     {split.extraItems.length === 1 ? 'Este item não existe' : 'Estes itens não existem'} no {best.label}:
-                  </div>
-                  <div style={{ marginTop: 8 }}>
+                  </p>
+                  <div className="mt-2">
                     {split.extraItems.map((item) => (
-                      <div className="row small" key={item.name} style={{ padding: '3px 0' }}>
-                        <span className="grow" style={{ minWidth: 0 }}>
-                          {item.name}
-                        </span>
-                        <span className="badge">{item.market}</span>
-                        <span className="money muted">{money(item.subtotal)}</span>
+                      <div key={item.name} className="flex items-center gap-2 py-0.5 text-sm">
+                        <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                        <Badge variant="secondary">{item.market}</Badge>
+                        <span className="text-muted-foreground tabular-nums">{money(item.subtotal)}</span>
                       </div>
                     ))}
                   </div>
-                  <div className="small muted" style={{ marginTop: 10 }}>
+                  <p className="text-muted-foreground mt-2.5 text-sm">
                     Passar também no {split.markets.find((m) => m.key !== best.key)?.label} custa{' '}
-                    {money(split.total - best.total)} a mais no total ({money(split.total)}) — a diferença é quase toda o preço
-                    {split.extraItems.length === 1 ? ' desse item' : ' desses itens'}, não economia perdida.
-                  </div>
-                </div>
+                    {money(split.total - best.total)} a mais no total ({money(split.total)}) — a diferença é quase toda
+                    o preço{split.extraItems.length === 1 ? ' desse item' : ' desses itens'}, não economia perdida.
+                  </p>
+                </Card>
               </>
             )}
 
-            <div className="section-title">Custo em cada mercado</div>
-            <div className="card">
+            <SectionTitle>Custo em cada mercado</SectionTitle>
+            <Card className="overflow-hidden py-0">
               {data.markets.map((m) => (
-                <div className="item" key={m.key}>
-                  <span style={{ width: 8, height: 34, borderRadius: 4, background: m.color, flex: 'none' }} />
-                  <div className="body">
-                    <div className="name">{m.label}</div>
-                    <div className="meta">
+                <Row key={m.key}>
+                  <span className="h-8 w-2 shrink-0 rounded-full" style={{ background: m.color }} />
+                  <RowBody>
+                    <RowName>{m.label}</RowName>
+                    <RowMeta>
                       {m.complete ? (
-                        <span className="badge ok">tem tudo</span>
+                        <Badge variant="success">tem tudo</Badge>
                       ) : (
-                        <span className="badge warn">faltam {m.missingCount}</span>
+                        <Badge variant="secondary">faltam {m.missingCount}</Badge>
                       )}
-                      <span className="faint">{m.covered} itens</span>
-                    </div>
-                  </div>
-                  <strong className="money nowrap">{money(m.total)}</strong>
-                </div>
+                      <span className="text-muted-foreground/70">{m.covered} itens</span>
+                    </RowMeta>
+                  </RowBody>
+                  <strong className="shrink-0 text-[15px] font-bold tabular-nums">{money(m.total)}</strong>
+                </Row>
               ))}
-            </div>
+            </Card>
 
             {data.unpriced.length > 0 && (
               <>
-                <div className="section-title">
-                  Sem preço <span className="count right">{data.unpriced.length}</span>
-                </div>
-                <div className="card">
+                <SectionTitle action={<span className="text-muted-foreground text-sm">{data.unpriced.length}</span>}>
+                  Sem preço
+                </SectionTitle>
+                <Card className="overflow-hidden py-0">
                   {data.unpriced.map((item) => (
-                    <div className="item" key={item.id}>
-                      <div className="body">
-                        <div className="name">{item.name}</div>
-                        <div className="meta">
+                    <Row key={item.id}>
+                      <RowBody>
+                        <RowName>{item.name}</RowName>
+                        <RowMeta>
                           {item.lastPaid != null ? (
                             <span>última vez: {money(item.lastPaid)}</span>
                           ) : (
-                            <span className="faint">escrito à mão, sem produto vinculado</span>
+                            <span className="text-muted-foreground/70">escrito à mão, sem produto vinculado</span>
                           )}
-                        </div>
-                      </div>
-                      <span className="badge">{quantity(item.qty, item.unit)}</span>
-                    </div>
+                        </RowMeta>
+                      </RowBody>
+                      <Badge variant="secondary" className="shrink-0">
+                        {quantity(item.qty, item.unit)}
+                      </Badge>
+                    </Row>
                   ))}
-                </div>
-                <p className="small faint" style={{ margin: '10px 4px 0' }}>
+                </Card>
+                <p className="text-muted-foreground mt-2.5 px-1 text-xs">
                   Estes itens não entram na conta. Busque-os no catálogo para incluir no comparativo.
                 </p>
               </>
             )}
           </>
         )}
-      </main>
+      </Page>
     </>
   );
 }

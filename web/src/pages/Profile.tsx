@@ -1,8 +1,13 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
-import { useStore } from '../lib/store';
-import { Sheet } from '../components/Sheet';
+import { Check, ChevronRight, Download, Lock, Receipt, Smartphone, TriangleAlert, Upload } from 'lucide-react';
+import { api } from '@/lib/api';
+import { useStore } from '@/lib/store';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Banner, Field, Page, Row, RowBody, RowMeta, RowName, SectionTitle, Topbar } from '@/components/Layout';
+import { Sheet } from '@/components/Sheet';
 
 export default function Profile() {
   const { user, members, markets, logout, refreshLists } = useStore();
@@ -57,142 +62,138 @@ export default function Profile() {
     }
   }
 
+  const opcoes = [
+    { icone: <Receipt />, nome: 'Compras anteriores', apoio: 'o que já foi gasto em cada ida', ação: () => navigate('/historico') },
+    { icone: <Lock />, nome: 'Trocar senha', apoio: null, ação: () => setSheet('password') },
+    { icone: <Download />, nome: 'Baixar backup', apoio: 'as listas e o histórico num arquivo', ação: () => void baixarBackup() },
+    {
+      icone: <Upload />,
+      nome: 'Restaurar backup',
+      apoio: 'acrescenta o que falta, não substitui',
+      ação: () => arquivo.current?.click(),
+    },
+  ];
+
   return (
     <>
-      <header className="topbar">
-        <div className="grow">
-          <h1>Perfil</h1>
-          <p className="sub">{user?.email}</p>
-        </div>
-      </header>
+      <Topbar title="Perfil" subtitle={user?.email} />
 
-      <main className="page">
+      <Page className="max-w-3xl">
         {message && (
-          <div className="banner ok">
-            <span>✅</span>
-            <span>{message}</span>
-          </div>
+          <Banner tom="ok" icon={<Check />} className="mb-3">
+            {message}
+          </Banner>
         )}
         {error && !sheet && (
-          <div className="banner danger">
-            <span>⚠️</span>
-            <span>{error}</span>
-          </div>
+          <Banner tom="danger" icon={<TriangleAlert />} className="mb-3">
+            {error}
+          </Banner>
         )}
 
-        <div className="section-title">Quem usa esta lista</div>
-        <div className="card">
+        <SectionTitle>Quem usa esta lista</SectionTitle>
+        <Card className="overflow-hidden py-0">
           {members.map((m) => (
-            <div className="item" key={m.id}>
-              <div className="thumb thumb-fallback" style={{ background: m.color, color: '#fff', fontSize: 16, fontWeight: 700 }}>
+            <Row key={m.id}>
+              <span
+                className="grid size-11 shrink-0 place-items-center rounded-xl text-base font-bold text-white"
+                style={{ background: m.color }}
+              >
                 {m.name.slice(0, 1).toUpperCase()}
-              </div>
-              <div className="body">
-                <div className="name">{m.name}</div>
-                <div className="meta">{m.id === user?.id ? 'você' : 'compartilha o carrinho com você'}</div>
-              </div>
-            </div>
+              </span>
+              <RowBody>
+                <RowName>{m.name}</RowName>
+                <RowMeta>{m.id === user?.id ? 'você' : 'compartilha o carrinho com você'}</RowMeta>
+              </RowBody>
+            </Row>
           ))}
-        </div>
-        <p className="small faint" style={{ margin: '8px 4px 0' }}>
-          Para outra pessoa entrar, passe o código de convite definido em <code>INVITE_CODE</code> no servidor.
+        </Card>
+        <p className="text-muted-foreground mt-2 px-1 text-xs">
+          Para outra pessoa entrar, passe o código de convite definido em <code className="font-semibold">INVITE_CODE</code>{' '}
+          no servidor.
         </p>
 
-        <div className="section-title">Mercados consultados</div>
-        <div className="card">
+        <SectionTitle>Mercados consultados</SectionTitle>
+        <Card className="overflow-hidden py-0">
           {markets.map((m) => (
-            <div className="item" key={m.key}>
-              <span style={{ width: 8, height: 30, borderRadius: 4, background: m.color, flex: 'none' }} />
-              <div className="body">
-                <div className="name">{m.label}</div>
-                <div className="meta">
-                  <a href={m.site} target="_blank" rel="noreferrer">
+            <Row key={m.key}>
+              <span className="h-7 w-2 shrink-0 rounded-full" style={{ background: m.color }} />
+              <RowBody>
+                <RowName>{m.label}</RowName>
+                <RowMeta>
+                  <a href={m.site} target="_blank" rel="noreferrer" className="hover:underline">
                     {m.site.replace('https://', '')}
                   </a>
-                </div>
-              </div>
-            </div>
+                </RowMeta>
+              </RowBody>
+            </Row>
           ))}
-        </div>
+        </Card>
 
-        <div className="section-title">Este app</div>
-        <div className="card">
-          <button className="item" style={{ width: '100%', background: 'none', border: 'none', textAlign: 'left' }} onClick={() => navigate('/historico')}>
-            <div className="thumb thumb-fallback">🧾</div>
-            <div className="body">
-              <div className="name">Compras anteriores</div>
-              <div className="meta">o que já foi gasto em cada ida</div>
-            </div>
-            <span className="faint">→</span>
-          </button>
-          <button className="item" style={{ width: '100%', background: 'none', border: 'none', textAlign: 'left' }} onClick={() => setSheet('password')}>
-            <div className="thumb thumb-fallback">🔒</div>
-            <div className="body">
-              <div className="name">Trocar senha</div>
-            </div>
-            <span className="faint">→</span>
-          </button>
-          <button className="item" style={{ width: '100%', background: 'none', border: 'none', textAlign: 'left' }} onClick={() => void baixarBackup()}>
-            <div className="thumb thumb-fallback">💾</div>
-            <div className="body">
-              <div className="name">Baixar backup</div>
-              <div className="meta">as listas e o histórico num arquivo</div>
-            </div>
-            <span className="faint">→</span>
-          </button>
-          <button className="item" style={{ width: '100%', background: 'none', border: 'none', textAlign: 'left' }} onClick={() => arquivo.current?.click()}>
-            <div className="thumb thumb-fallback">📥</div>
-            <div className="body">
-              <div className="name">Restaurar backup</div>
-              <div className="meta">acrescenta o que falta, não substitui</div>
-            </div>
-            <span className="faint">→</span>
-          </button>
-          <input
-            ref={arquivo}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = '';
-              if (file) void restaurarBackup(file);
-            }}
-          />
-        </div>
+        <SectionTitle>Este app</SectionTitle>
+        <Card className="overflow-hidden py-0">
+          {opcoes.map((o) => (
+            <Row key={o.nome} onClick={o.ação}>
+              <span className="text-muted-foreground grid size-11 shrink-0 place-items-center rounded-xl border bg-neutral-50 [&>svg]:size-5">
+                {o.icone}
+              </span>
+              <RowBody>
+                <RowName>{o.nome}</RowName>
+                {o.apoio && <RowMeta>{o.apoio}</RowMeta>}
+              </RowBody>
+              <ChevronRight className="text-muted-foreground/60 size-4 shrink-0" />
+            </Row>
+          ))}
+        </Card>
+        <input
+          ref={arquivo}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (file) void restaurarBackup(file);
+          }}
+        />
 
         {!installed && (
-          <div className="banner info" style={{ marginTop: 14 }}>
-            <span>📲</span>
-            <span>
-              Dá para instalar no celular: no menu do navegador, escolha <strong>Adicionar à tela de início</strong>.
-            </span>
-          </div>
+          <Banner icon={<Smartphone />} className="mt-4">
+            Dá para instalar no celular: no menu do navegador, escolha <strong>Adicionar à tela de início</strong>.
+          </Banner>
         )}
 
-        <button className="btn btn-danger btn-block" style={{ marginTop: 18 }} onClick={() => void logout()}>
+        <Button variant="outline" className="text-destructive hover:bg-destructive/10 mt-5 w-full" onClick={() => void logout()}>
           Sair da conta
-        </button>
-      </main>
+        </Button>
+      </Page>
 
       {sheet === 'password' && (
         <Sheet title="Trocar senha" onClose={() => setSheet(null)}>
-          <label className="field">
-            <span>Senha atual</span>
-            <input className="input" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
-          </label>
-          <label className="field">
-            <span>Nova senha</span>
-            <input className="input" type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" minLength={8} />
-          </label>
+          <Field label="Senha atual">
+            <Input
+              type="password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              autoComplete="current-password"
+            />
+          </Field>
+          <Field label="Nova senha" hint="Ao menos 8 caracteres.">
+            <Input
+              type="password"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              autoComplete="new-password"
+              minLength={8}
+            />
+          </Field>
           {error && (
-            <div className="banner danger">
-              <span>⚠️</span>
-              <span>{error}</span>
-            </div>
+            <Banner tom="danger" icon={<TriangleAlert />} className="mb-3">
+              {error}
+            </Banner>
           )}
-          <button
-            className="btn btn-primary btn-block btn-lg"
+          <Button
+            size="lg"
+            className="w-full"
             disabled={next.length < 8 || !current}
             onClick={async () => {
               setError('');
@@ -209,7 +210,7 @@ export default function Profile() {
             }}
           >
             Salvar nova senha
-          </button>
+          </Button>
         </Sheet>
       )}
     </>

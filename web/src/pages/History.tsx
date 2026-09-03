@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
-import { dateTime, money } from '../lib/format';
-import type { TripSummary } from '../lib/types';
+import { ArrowLeft, Ban, Receipt } from 'lucide-react';
+import { api } from '@/lib/api';
+import { dateTime, money } from '@/lib/format';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { EmptyState, Page, Row, RowBody, RowMeta, RowName, Topbar } from '@/components/Layout';
+import type { TripSummary } from '@/lib/types';
 
 export default function History() {
   const navigate = useNavigate();
@@ -16,46 +21,45 @@ export default function History() {
 
   return (
     <>
-      <header className="topbar">
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate('/')} aria-label="Voltar">
-          ←
-        </button>
-        <div className="grow">
-          <h1>Compras anteriores</h1>
-          <p className="sub">{trips ? `${trips.length} idas · ${money(total)} no total` : 'carregando…'}</p>
-        </div>
-      </header>
+      <Topbar
+        title="Compras anteriores"
+        subtitle={trips ? `${trips.length} ${trips.length === 1 ? 'ida' : 'idas'} · ${money(total)} no total` : 'carregando…'}
+      >
+        <Button variant="ghost" size="icon" onClick={() => navigate('/')} aria-label="Voltar">
+          <ArrowLeft />
+        </Button>
+      </Topbar>
 
-      <main className="page">
+      <Page className="max-w-3xl">
         {trips && !trips.length && (
-          <div className="empty">
-            <div className="ico">🧾</div>
-            <h3>Nenhuma compra fechada ainda</h3>
-            <p>Quando você encerrar a primeira ida ao mercado, ela aparece aqui com o total gasto.</p>
-          </div>
+          <EmptyState icon={<Receipt />} title="Nenhuma compra fechada ainda">
+            Quando você encerrar a primeira ida ao mercado, ela aparece aqui com o total gasto.
+          </EmptyState>
         )}
 
         {trips && trips.length > 0 && (
-          <div className="card">
+          <Card className="overflow-hidden py-0">
             {trips.map((trip) => (
-              <div className="item" key={trip.id}>
-                <div className="thumb thumb-fallback">{trip.status === 'canceled' ? '🚫' : '🧾'}</div>
-                <div className="body">
-                  <div className="name">{trip.marketLabel || trip.listName}</div>
-                  <div className="meta">
+              <Row key={trip.id}>
+                <span className="text-muted-foreground grid size-11 shrink-0 place-items-center rounded-xl border bg-neutral-50">
+                  {trip.status === 'canceled' ? <Ban className="size-5" /> : <Receipt className="size-5" />}
+                </span>
+                <RowBody>
+                  <RowName>{trip.marketLabel || trip.listName}</RowName>
+                  <RowMeta>
                     <span>{dateTime(trip.finishedAt || trip.startedAt)}</span>
-                    <span className="faint">
+                    <span className="text-muted-foreground/70">
                       {trip.pickedItems} de {trip.totalItems} itens
                     </span>
-                    {trip.status === 'canceled' && <span className="badge danger">descartada</span>}
-                  </div>
-                </div>
-                <strong className="money nowrap">{money(trip.spent)}</strong>
-              </div>
+                    {trip.status === 'canceled' && <Badge variant="destructive">descartada</Badge>}
+                  </RowMeta>
+                </RowBody>
+                <strong className="shrink-0 text-[15px] font-bold tabular-nums">{money(trip.spent)}</strong>
+              </Row>
             ))}
-          </div>
+          </Card>
         )}
-      </main>
+      </Page>
     </>
   );
 }

@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { api } from '../lib/api';
-import { useStore } from '../lib/store';
-import { ListItemRow } from '../components/ListItemRow';
-import { Sheet } from '../components/Sheet';
-import type { ShoppingList, Trip } from '../lib/types';
+import { ArrowLeft, Coins, Plus, ShoppingCart, TriangleAlert } from 'lucide-react';
+import { api } from '@/lib/api';
+import { useStore } from '@/lib/store';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Banner, EmptyState, Page, SectionTitle, Topbar } from '@/components/Layout';
+import { ListItemRow } from '@/components/ListItemRow';
+import { Sheet } from '@/components/Sheet';
+import type { ShoppingList, Trip } from '@/lib/types';
 
 export default function ListDetail() {
   const { id } = useParams();
@@ -54,41 +60,36 @@ export default function ListDetail() {
 
   if (!list) {
     return (
-      <main className="page">
+      <Page className="max-w-3xl">
         {error ? (
-          <div className="banner danger">
-            <span>⚠️</span>
-            <span>{error}</span>
-          </div>
+          <Banner tom="danger" icon={<TriangleAlert />}>
+            {error}
+          </Banner>
         ) : (
-          <div className="center">
-            <div className="spinner" />
+          <div className="flex flex-col gap-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
           </div>
         )}
-      </main>
+      </Page>
     );
   }
 
   return (
     <>
-      <header className="topbar">
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate('/listas')} aria-label="Voltar">
-          ←
-        </button>
-        <div className="grow">
-          <h1>
-            {list.emoji} {list.name}
-          </h1>
-          <p className="sub">
-            {list.items.length} {list.items.length === 1 ? 'item' : 'itens'}
-          </p>
-        </div>
-      </header>
+      <Topbar
+        title={`${list.emoji} ${list.name}`}
+        subtitle={`${list.items.length} ${list.items.length === 1 ? 'item' : 'itens'}`}
+      >
+        <Button variant="ghost" size="icon" onClick={() => navigate('/listas')} aria-label="Voltar">
+          <ArrowLeft />
+        </Button>
+      </Topbar>
 
-      <main className="page">
+      <Page className="max-w-3xl">
         <form
-          className="searchbar"
-          style={{ marginBottom: 12 }}
+          className="mb-3 flex gap-2"
           onSubmit={async (e) => {
             e.preventDefault();
             const name = quick.trim();
@@ -97,35 +98,30 @@ export default function ListDetail() {
             await act(api.post<{ list: ShoppingList }>(`/lists/${list.id}/items`, { name }));
           }}
         >
-          <input className="input" placeholder="Adicionar item…" value={quick} onChange={(e) => setQuick(e.target.value)} />
-          <button className="btn btn-primary" disabled={!quick.trim()}>
+          <Input placeholder="Adicionar item…" value={quick} onChange={(e) => setQuick(e.target.value)} />
+          <Button type="submit" disabled={!quick.trim()}>
+            <Plus />
             Add
-          </button>
+          </Button>
         </form>
 
         {error && (
-          <div className="banner danger">
-            <span>⚠️</span>
-            <span>{error}</span>
-          </div>
+          <Banner tom="danger" icon={<TriangleAlert />} className="mb-3">
+            {error}
+          </Banner>
         )}
 
         {!list.items.length ? (
-          <div className="empty">
-            <div className="ico">{list.emoji}</div>
-            <h3>Lista vazia</h3>
-            <p>Escreva os itens acima, ou busque produtos no catálogo, monte a lista geral e salve-a como lista rápida.</p>
-          </div>
+          <EmptyState icon={<span className="text-4xl">{list.emoji}</span>} title="Lista vazia">
+            Escreva os itens acima, ou busque produtos no catálogo, monte a lista geral e salve-a como lista rápida.
+          </EmptyState>
         ) : (
           grouped.map((group) => (
             <div key={group.key}>
-              <div className="section-title">
-                <span>
-                  {group.emoji} {group.label}
-                </span>
-                <span className="count right">{group.items.length}</span>
-              </div>
-              <div className="card">
+              <SectionTitle action={<span className="text-muted-foreground text-sm">{group.items.length}</span>}>
+                {group.emoji} {group.label}
+              </SectionTitle>
+              <Card className="overflow-hidden py-0">
                 {group.items.map((item) => (
                   <ListItemRow
                     key={item.id}
@@ -138,14 +134,14 @@ export default function ListDetail() {
                     }
                   />
                 ))}
-              </div>
+              </Card>
             </div>
           ))
         )}
 
-        <div className="stack" style={{ marginTop: 20 }}>
-          <button
-            className="btn btn-primary btn-block btn-lg"
+        <div className="mt-6 flex flex-col gap-2">
+          <Button
+            size="lg"
             disabled={!list.items.length}
             onClick={async () => {
               if (trip) {
@@ -158,22 +154,29 @@ export default function ListDetail() {
               navigate('/carrinho');
             }}
           >
-            🛒 {trip ? 'Trazer para o carrinho' : 'Montar carrinho com esta lista'}
-          </button>
-          <button className="btn btn-block" disabled={!list.items.length} onClick={() => navigate(`/comparar/${list.id}`)}>
-            💰 Comparar preços desta lista
-          </button>
-          <button className="btn btn-danger btn-block btn-sm" onClick={() => setConfirmDelete(true)}>
+            <ShoppingCart />
+            {trip ? 'Trazer para o carrinho' : 'Montar carrinho com esta lista'}
+          </Button>
+          <Button variant="outline" disabled={!list.items.length} onClick={() => navigate(`/comparar/${list.id}`)}>
+            <Coins />
+            Comparar preços desta lista
+          </Button>
+          <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10" onClick={() => setConfirmDelete(true)}>
             Apagar lista
-          </button>
+          </Button>
         </div>
-      </main>
+      </Page>
 
       {confirmDelete && (
-        <Sheet title={`Apagar “${list.name}”?`} subtitle="A lista e seus itens somem. A lista geral não é afetada." onClose={() => setConfirmDelete(false)}>
-          <div className="stack">
-            <button
-              className="btn btn-primary btn-block btn-lg"
+        <Sheet
+          title={`Apagar “${list.name}”?`}
+          subtitle="A lista e seus itens somem. A lista geral não é afetada."
+          onClose={() => setConfirmDelete(false)}
+        >
+          <div className="flex flex-col gap-2">
+            <Button
+              size="lg"
+              variant="destructive"
               onClick={async () => {
                 await api.del(`/lists/${list.id}`);
                 await refreshLists();
@@ -181,10 +184,10 @@ export default function ListDetail() {
               }}
             >
               Sim, apagar
-            </button>
-            <button className="btn btn-ghost btn-block" onClick={() => setConfirmDelete(false)}>
+            </Button>
+            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
               Cancelar
-            </button>
+            </Button>
           </div>
         </Sheet>
       )}
