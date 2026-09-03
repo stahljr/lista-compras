@@ -1,5 +1,5 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
-import { ClipboardList, ListChecks, ShoppingCart, Store, User, WifiOff } from 'lucide-react';
+import { ClipboardList, Heart, ListChecks, ShoppingCart, Store, User, WifiOff } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStore } from '@/lib/store';
@@ -13,11 +13,12 @@ import Cart from '@/pages/Cart';
 import Compare from '@/pages/Compare';
 import History from '@/pages/History';
 import Profile from '@/pages/Profile';
+import Favorites from '@/pages/Favorites';
 
 type Aba = { to: string; label: string; icon: LucideIcon; badge?: number; end?: boolean };
 
 export default function App() {
-  const { user, loading, trip, general, online } = useStore();
+  const { user, loading, trip, general, online, favoritos } = useStore();
 
   if (loading) {
     return (
@@ -33,6 +34,7 @@ export default function App() {
     { to: '/', label: 'Mercado', icon: Store, end: true },
     { to: '/lista', label: 'Lista', icon: ClipboardList, badge: general?.items.length || undefined },
     { to: '/listas', label: 'Listas', icon: ListChecks },
+    { to: '/favoritos', label: 'Favoritos', icon: Heart, badge: favoritos.length || undefined },
     { to: '/carrinho', label: 'Carrinho', icon: ShoppingCart, badge: trip ? trip.progress.missing : undefined },
     { to: '/perfil', label: 'Perfil', icon: User },
   ];
@@ -48,6 +50,7 @@ export default function App() {
         <Route path="/comparar/:listId" element={<Compare />} />
         <Route path="/carrinho" element={<Cart />} />
         <Route path="/historico" element={<History />} />
+        <Route path="/favoritos" element={<Favorites />} />
         <Route path="/perfil" element={<Profile />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
@@ -76,7 +79,7 @@ export default function App() {
             end={end}
             className={({ isActive }) =>
               cn(
-                'relative flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-semibold transition-colors',
+                'relative flex min-w-0 flex-1 flex-col items-center gap-1 py-2 text-[10.5px] font-semibold whitespace-nowrap transition-colors',
                 'md:flex-none md:flex-row md:justify-start md:gap-3 md:rounded-lg md:px-3 md:py-2.5 md:text-sm',
                 isActive ? 'text-primary md:bg-secondary' : 'text-muted-foreground hover:text-foreground',
               )
