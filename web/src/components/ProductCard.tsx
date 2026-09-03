@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { Minus, Plus, ShoppingCart, Check } from 'lucide-react';
+import { Heart, Minus, Plus, ShoppingCart, Check } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { money, quantity as fmtQty } from '@/lib/format';
+import { useStore } from '@/lib/store';
 import { roundQty, stepOf } from '@/lib/unit';
 import type { Product } from '@/lib/types';
 
@@ -38,6 +40,8 @@ export function ProductCard({
   onOpen?: () => void;
   added?: boolean;
 }) {
+  const { favoritos, toggleFavorito } = useStore();
+  const favorito = favoritos.includes(product.id);
   const [quebrada, setQuebrada] = useState(false);
   const [carregada, setCarregada] = useState(false);
   // Passo do contador segue a unidade do mercado: meio quilo por toque no que
@@ -57,6 +61,20 @@ export function ProductCard({
           −{economia.percent}%
         </Badge>
       )}
+
+      {/* O coracao fica sobre a foto, no canto: e o gesto rapido de "isso a
+          gente compra sempre", sem abrir o produto. */}
+      <button
+        type="button"
+        onClick={() => void toggleFavorito(product.id)}
+        aria-label={favorito ? `Desfavoritar ${product.name}` : `Favoritar ${product.name}`}
+        aria-pressed={favorito}
+        className="absolute top-1.5 right-1.5 z-10 grid size-8 place-items-center rounded-full bg-white/85 backdrop-blur-sm transition-transform active:scale-90"
+      >
+        <Heart
+          className={cn('size-4', favorito ? 'fill-sale text-sale' : 'text-muted-foreground')}
+        />
+      </button>
 
       {/* Fundo claro fixo: a foto dos mercados vem recortada em branco, e no
           tema escuro um fundo escuro deixaria a moldura suja. */}

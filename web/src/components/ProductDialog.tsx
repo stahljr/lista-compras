@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, ImageIcon, Minus, Plus, ShoppingCart, Tag } from 'lucide-react';
+import { Check, Heart, ImageIcon, Minus, Plus, ShoppingCart, Tag } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useStore } from '@/lib/store';
 import { money, quantity as fmtQty } from '@/lib/format';
@@ -32,7 +32,7 @@ export function ProductDialog({
   onAdd: (p: Product, qty: number, unit: string, market: string | null) => void;
   onCoverChange?: () => void;
 }) {
-  const { markets, categories, notify } = useStore();
+  const { markets, categories, notify, favoritos, toggleFavorito } = useStore();
   const [detalhe, setDetalhe] = useState<Product | null>(product);
   const [historico, setHistorico] = useState<Historico>(null);
   const [buscando, setBuscando] = useState(false);
@@ -134,7 +134,20 @@ export function ProductDialog({
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <DialogTitle>{p.name}</DialogTitle>
+              <div className="flex items-start gap-2">
+                <DialogTitle className="min-w-0 flex-1">{p.name}</DialogTitle>
+                <button
+                  type="button"
+                  onClick={() => void toggleFavorito(p.id)}
+                  aria-label={favoritos.includes(p.id) ? 'Desfavoritar' : 'Favoritar'}
+                  aria-pressed={favoritos.includes(p.id)}
+                  className="hover:bg-muted -mt-1 shrink-0 rounded-full p-1.5 transition-transform active:scale-90"
+                >
+                  <Heart
+                    className={cn('size-5', favoritos.includes(p.id) ? 'fill-sale text-sale' : 'text-muted-foreground')}
+                  />
+                </button>
+              </div>
               <DialogDescription className="mt-1">
                 {p.brand && <span className="font-semibold">{p.brand}</span>}
                 {p.brand && p.ean && ' · '}

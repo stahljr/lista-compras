@@ -21,6 +21,9 @@ type Store = {
   user: User | null;
   members: Person[];
   household: Household | null;
+  /** Ids dos produtos favoritos da casa. */
+  favoritos: number[];
+  toggleFavorito: (productId: number) => Promise<void>;
   loading: boolean;
   needsSetup: boolean;
   general: ShoppingList | null;
@@ -52,6 +55,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => recuperar<User>('user'));
   const [members, setMembers] = useState<Person[]>(() => recuperar<Person[]>('members') || []);
   const [household, setHousehold] = useState<Household | null>(() => recuperar<Household>('household'));
+  const [favoritos, setFavoritos] = useState<number[]>(() => recuperar<number[]>('favoritos') || []);
   const [loading, setLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
   const [general, setGeneralState] = useState<ShoppingList | null>(() => recuperar<ShoppingList>('general'));
@@ -100,6 +104,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     guardar('lists', data.lists);
   }, [setGeneral]);
 
+  /**
+   * Marca ou desmarca o favorito. Muda na tela antes da resposta: e um toque
+   * num coracao, e esperar a rede para ele encher parece que nao funcionou.
+   */
+  const toggleFavorito = useCallback(
+    async (productId: number) => {
+      const antes = favoritos;
+      const proximo = antes.includes(productId) ? antes.filter((id) => id !== productId) : [productId, ...antes];
+      setFavoritos(proximo);
+      guardar('favoritos', proximo);
+      try {
+        const { favorite } = await api.post<{ favorite: boolean }>(`/catalog/products/${productId}/favorite`);
+        // A resposta manda: se o outro celular mexeu no meio, ela corrige.
+        const corrigido = favorite
+          ? [productId, ...proximo.filter((id) => id !== productId)]
+          : proximo.filter((id) => id !== productId);
+        setFavoritos(corrigido);
+        guardar('favoritos', corrigido);
+      } catch {
+        setFavoritos(antes);
+        guardar('favoritos', antes);
+      }
+    },
+    [favoritos],
+  );
+
   const refreshTrip = useCallback(async () => {
     const { trip: active } = await api.get<{ trip: Trip | null }>('/trips/active');
     setTrip(active);
@@ -116,6 +146,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       api.get<{ categories: Category[] }>('/catalog/categories').then((d) => {
         setCategories(d.categories);
         guardar('categories', d.categories);
+      }),
+      api.get<{ ids: number[] }>('/catalog/favorites?ids=1').then((d) => {
+        setFavoritos(d.ids);
+        guardar('favoritos', d.ids);
       }),
     ]);
   }, [refreshLists, refreshTrip]);
@@ -230,6 +264,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       user,
       members,
       household,
+      favoritos,
+      toggleFavorito,
       loading,
       needsSetup,
       general,
@@ -252,7 +288,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setGeneral,
       setTrip,
     }),
-    [user, members, household, loading, needsSetup, general, lists, trip, markets, categories, online, pendingWrites, notePendingWrite, toast, notify, dismissToast, login, register, logout, refreshGeneral, refreshLists, refreshTrip, setGeneral, setTrip],
+    [user, members, household, favoritos, toggleFavorito, loading, needsSetup, general, lists, trip, markets, categories, online, pendingWrites, notePendingWrite, toast, notify, dismissToast, login, register, logout, refreshGeneral, refreshLists, refreshTrip, setGeneral, setTrip],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

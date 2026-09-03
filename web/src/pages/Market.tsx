@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, ClipboardList, PackageOpen, RefreshCw, Search, Store, TriangleAlert } from 'lucide-react';
+import { ChevronDown, ClipboardList, Heart, PackageOpen, RefreshCw, Search, Store, TriangleAlert } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useStore } from '@/lib/store';
 import { quantity as fmtQty } from '@/lib/format';
@@ -80,7 +80,7 @@ function CorredorTile({ c, ativo, onClick }: { c: Corredor; ativo: boolean; onCl
  * quatro mercados de uma vez.
  */
 export default function Market() {
-  const { setGeneral, general, trip, refreshTrip, notify } = useStore();
+  const { setGeneral, general, trip, refreshTrip, notify, favoritos } = useStore();
   const navigate = useNavigate();
   const [term, setTerm] = useState('');
   const [corredores, setCorredores] = useState<Corredor[]>([]);
@@ -96,6 +96,7 @@ export default function Market() {
   const [filtrosBusca, setFiltrosBusca] = useState<Filtros>(SEM_FILTRO);
   const [totalBusca, setTotalBusca] = useState(0);
   const [aquecendo, setAquecendo] = useState<Aquecimento | null>(null);
+  const [favoritados, setFavoritados] = useState<Product[]>([]);
   const [buscandoMais, setBuscandoMais] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [added, setAdded] = useState<Record<number, boolean>>({});
@@ -118,6 +119,10 @@ export default function Market() {
 
   useEffect(() => {
     void recarregarCorredores().finally(() => setCarregandoCorredores(false));
+    void api
+      .get<{ products: Product[] }>('/catalog/favorites?limit=20')
+      .then((d) => setFavoritados(d.products))
+      .catch(() => {});
     // O servidor comeca a encher o catalogo sozinho quando o banco e novo;
     // perguntar aqui faz a tela mostrar o progresso em vez de parecer vazia.
     void api
@@ -491,6 +496,24 @@ export default function Market() {
               </>
             )}
           </>
+        )}
+
+        {/* Favoritos primeiro: o que a casa compra sempre e o que se procura
+            mais, e ninguem quer caçar isso corredor a corredor. */}
+        {!buscando && !aberto && favoritados.filter((p) => favoritos.includes(p.id)).length > 0 && (
+          <div>
+            <SectionTitle action={<span className="text-muted-foreground text-sm">{favoritos.length}</span>}>
+              <Heart className="fill-sale text-sale mr-1 inline size-5 align-[-3px]" />
+              Favoritos
+            </SectionTitle>
+            <Shelf>
+              {favoritados
+                .filter((p) => favoritos.includes(p.id))
+                .map((p) => (
+                  <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q, u) => void add(p, q, u)} onOpen={() => setAberto2(p)} />
+                ))}
+            </Shelf>
+          </div>
         )}
 
         {!buscando &&

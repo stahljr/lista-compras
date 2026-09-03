@@ -14,6 +14,9 @@ import {
   hydrate,
   fillMissingOffers,
   priceStats,
+  favorites,
+  favoriteIds,
+  toggleFavorite,
 } from '../catalog.js';
 import { facetar, filtrar } from '../facets.js';
 import { CATEGORIES, CATEGORY_BY_KEY } from '../categories.js';
@@ -80,6 +83,31 @@ catalogRouter.post('/warmup', (req, res) => {
 catalogRouter.get('/warmup', async (_req, res, next) => {
   try {
     res.json({ warmup: warmupState(), total: await totalDoCatalogo() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Os favoritos da casa. Com ?ids=1 devolve so os numeros -- e o que a tela
+ * precisa para desenhar o coracao cheio em cada cartao, sem carregar produto.
+ */
+catalogRouter.get('/favorites', async (req, res, next) => {
+  try {
+    if (req.query.ids === '1') return res.json({ ids: await favoriteIds(req.user.householdId) });
+    const produtos = await favorites(req.user.householdId, { limit: Math.min(Number(req.query.limit) || 40, 60) });
+    res.json({ products: produtos, ids: produtos.map((p) => p.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+catalogRouter.post('/products/:id/favorite', async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!(await hydrate(id))) return res.status(404).json({ error: 'produto nao encontrado' });
+    const favorito = await toggleFavorite(req.user.householdId, id);
+    res.json({ id, favorite: favorito });
   } catch (err) {
     next(err);
   }

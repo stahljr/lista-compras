@@ -223,6 +223,15 @@ CREATE TABLE IF NOT EXISTS price_history (
   recorded_at TEXT NOT NULL DEFAULT datetime('now')
 );
 
+-- Produtos que a casa marcou como favoritos: o que se compra sempre, para nao
+-- ter de procurar de novo a cada lista. E por casa, como todo o resto.
+CREATE TABLE IF NOT EXISTS favorites (
+  household_id INTEGER NOT NULL REFERENCES households(id) ON DELETE CASCADE,
+  product_id   INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  created_at   TEXT NOT NULL DEFAULT datetime('now'),
+  PRIMARY KEY (household_id, product_id)
+);
+
 -- Chave/valor para controle interno (versao do classificador, capa do
 -- corredor escolhida a mao).
 CREATE TABLE IF NOT EXISTS meta (
@@ -242,7 +251,7 @@ BEGIN
   FOREACH tabela IN ARRAY ARRAY[
     'households', 'users', 'sessions', 'products', 'offers', 'search_cache',
     'lists', 'list_items', 'trips', 'trip_items', 'trip_lists',
-    'trip_item_sources', 'price_history', 'meta'
+    'trip_item_sources', 'price_history', 'favorites', 'meta'
   ] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tabela);
   END LOOP;

@@ -614,6 +614,33 @@ export async function alternativesIn(market, { productId = null, name = '', limi
     .map((c) => ({ product: produtos.get(c.id), priceHere: c.preco }));
 }
 
+/** Marca ou desmarca o favorito da casa, e devolve como ficou. */
+export async function toggleFavorite(householdId, productId) {
+  const existe = await db
+    .prepare('SELECT 1 FROM favorites WHERE household_id = ? AND product_id = ?')
+    .get(householdId, productId);
+  if (existe) {
+    await db.prepare('DELETE FROM favorites WHERE household_id = ? AND product_id = ?').run(householdId, productId);
+    return false;
+  }
+  await db
+    .prepare('INSERT INTO favorites (household_id, product_id) VALUES (?, ?) ON CONFLICT DO NOTHING')
+    .run(householdId, productId);
+  return true;
+}
+
+export async function favoriteIds(householdId) {
+  const rows = await db
+    .prepare('SELECT product_id FROM favorites WHERE household_id = ? ORDER BY created_at DESC')
+    .all(householdId);
+  return rows.map((r) => r.product_id);
+}
+
+/** Os favoritos hidratados, na ordem em que foram marcados. */
+export async function favorites(householdId, { limit = 40 } = {}) {
+  return hidratarVarios((await favoriteIds(householdId)).slice(0, limit));
+}
+
 /**
  * A chave com que o preco pago entra no historico -- e com que ele e lido
  * depois. Item com produto vinculado usa a chave do produto (o EAN, quando
