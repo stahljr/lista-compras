@@ -149,12 +149,16 @@ O que o app precisa do Supabase é uma linha: a connection string.
 
 1. https://supabase.com/dashboard → seu projeto (plano free serve).
 2. Botão **Connect**, no topo → aba **Connection string**.
-3. Escolha uma das opções de **pooler** — o host é
-   `aws-…-pooler.supabase.com`. **Não** use a "direct connection"
-   (`db.<ref>.supabase.co`): ela só responde em IPv6, e o Render não alcança.
-   Entre os poolers, o de **sessão** (porta 5432) é o mais parecido com um
-   Postgres normal e é o que eu recomendo; o de **transação** (6543) também
-   funciona.
+3. Escolha **Session pooler** — host `aws-…-pooler.supabase.com`, porta
+   **5432**. Ele se comporta como um Postgres normal, que é o que um servidor
+   de processo longo como este quer. O **Transaction pooler** (6543, mesmo
+   host) também funciona com este app.
+
+   **Não** use a "direct connection" (`db.<ref>.supabase.co`): ela responde só
+   em IPv6, e o Render sai por IPv4. O painel avisa que o transaction pooler
+   "usa IPv6 por padrão" e oferece um add-on pago de IPv4 — na prática o host
+   compartilhado do pooler resolve em IPv4 (só registros A), então o add-on não
+   é necessário.
 4. Copie a string e troque `[YOUR-PASSWORD]` pela senha do banco (a que você
    definiu ao criar o projeto; dá para gerar outra em **Settings → Database**).
 
@@ -180,7 +184,10 @@ Duas coisas que valem saber do plano free:
 O Render publica direto do GitHub, sem terminal: ele lê o `render.yaml` da raiz.
 
 1. https://dashboard.render.com → **New** → **Blueprint** → escolha o
-   repositório `lista-compras`.
+   repositório `lista-compras`. Escolha a região **mais perto do banco** (com
+   o Supabase em us-west-2, é Oregon): cada tela faz várias consultas, e
+   atravessar o país a cada uma soma. Região de serviço no Render não muda
+   depois de criado.
 2. Ele pede as duas variáveis que faltam:
    - **DATABASE_URL** — a string do Supabase (passo acima).
    - **INVITE_CODE** — o código que a segunda pessoa digita para entrar na

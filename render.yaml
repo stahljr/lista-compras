@@ -12,17 +12,19 @@ services:
     # unico incomodo e o servico dormir depois de 15 min parado -- a primeira
     # tela depois disso demora quase um minuto. Trocar para "starter" resolve.
     plan: free
-    # O Render nao tem regiao no Brasil; Virginia e a de menor latencia daqui,
-    # e a mesma para escolher no Supabase (us-east-1), para o banco ficar perto.
-    region: virginia
+    # Perto do banco importa mais que perto de casa: cada tela faz varias
+    # consultas, e atravessar os Estados Unidos a cada uma soma. Este projeto
+    # esta no Supabase em us-west-2, entao o servidor fica em Oregon.
+    # (A regiao de um servico no Render nao muda depois de criado.)
+    region: oregon
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
       # Connection string do Postgres. No Supabase: Connect > Connection string
-      # > escolha o *pooler* (o host aws-...pooler.supabase.com), porque a
-      # conexao direta e so IPv6 e o Render nao alcanca.
+      # > Session pooler (host aws-...pooler.supabase.com, porta 5432). A
+      # conexao direta (db.<ref>.supabase.co) e so IPv6, e o Render nao alcanca.
       - key: DATABASE_URL
         sync: false
       # Codigo que a segunda pessoa digita para entrar na mesma casa.
