@@ -104,6 +104,10 @@ npm run build             # compila o app
 npm start                 # http://localhost:3000
 ```
 
+Sem `DATABASE_URL`, o app sobe um Postgres embutido em arquivo (PGlite) dentro
+de `data/` — mesmo banco, mesmo dialeto, zero instalação. Para desenvolver
+contra o Postgres de verdade, basta exportar a `DATABASE_URL`.
+
 Em desenvolvimento, `npm run dev` sobe a API na 3000 e o Vite na 5173 com proxy
 da API.
 
@@ -116,12 +120,14 @@ npm run seed
 
 ## Colocando no ar
 
-O app é um processo Node e um arquivo SQLite, sem serviço externo. Ele precisa
-de três coisas do lugar onde for rodar:
+O app é um processo Node com um Postgres do lado. Ele precisa de três coisas do
+lugar onde for rodar:
 
 1. **Executar Node.** Não é site estático.
-2. **Um disco que persista.** O banco é um arquivo; se o disco for efêmero, a
-   lista some a cada reinício.
+2. **Um Postgres**, informado em `DATABASE_URL` — Supabase, Neon, qualquer um.
+   É o banco que guarda conta, sessão e lista; por estar fora do servidor, o
+   login vale em qualquer aparelho e sobrevive a deploy, reinício e ao sono do
+   plano gratuito. Não precisa de disco.
 3. **Um endereço HTTPS.** Sem isso o navegador não instala o PWA nem registra o
    service worker, e você perde justamente o modo offline dentro do mercado.
    `http://` só é aceito em `localhost`.
@@ -137,38 +143,60 @@ não mandam `Access-Control-Allow-Origin`, então o navegador **bloqueia** a
 chamada direta a eles. Hoje quem consulta os mercados é o servidor, onde CORS
 não existe. Do navegador, só o Condor responderia.
 
-### Render — publica pelo site, e o disco é o que importa
+### Supabase — o banco fora do servidor
 
-O Render publica direto do GitHub, sem terminal: ele lê o `render.yaml` que está
-na raiz do projeto.
+O que o app precisa do Supabase é uma linha: a connection string.
 
-1. https://dashboard.render.com → **New** → **Blueprint**.
-2. Autorize o GitHub e escolha o repositório `lista-compras`.
-3. Aparece o serviço `lista-compras`, já com o disco em `/data`. Preencha
-   **INVITE_CODE** com o código que a segunda pessoa vai digitar para entrar.
-4. **Apply**. O primeiro build leva alguns minutos — é o `better-sqlite3` sendo
-   compilado.
-5. O endereço sai como `https://lista-compras-xxxx.onrender.com`.
+1. https://supabase.com/dashboard → seu projeto (plano free serve).
+2. Botão **Connect**, no topo → aba **Connection string**.
+3. Escolha uma das opções de **pooler** — o host é
+   `aws-…-pooler.supabase.com`. **Não** use a "direct connection"
+   (`db.<ref>.supabase.co`): ela só responde em IPv6, e o Render não alcança.
+   Entre os poolers, o de **sessão** (porta 5432) é o mais parecido com um
+   Postgres normal e é o que eu recomendo; o de **transação** (6543) também
+   funciona.
+4. Copie a string e troque `[YOUR-PASSWORD]` pela senha do banco (a que você
+   definiu ao criar o projeto; dá para gerar outra em **Settings → Database**).
 
-Feito isso, cada `git push` neste branch republica sozinho.
+Não precisa criar tabela nem rodar migração: **o app cria o esquema sozinho no
+primeiro boot**, e o mesmo código cuida das mudanças seguintes. A integração
+com o GitHub que aparece nas configurações do Supabase é para quem versiona
+migrações na pasta `supabase/` — este projeto não usa, e deixá-la ligada não
+atrapalha.
 
-**O detalhe que custa dados:** disco, no Render, só existe em plano pago
-(Starter; o 1 GB do blueprint custa centavos em cima). No plano **free** o
-sistema de arquivos é efêmero — o banco é recriado vazio a cada deploy e a cada
-vez que o serviço acorda de dormir. É isso que apaga a lista, e não um bug do
-app. Duas saídas honestas:
+Duas coisas que valem saber do plano free:
 
-- **Starter + disco:** a lista fica, e o serviço não dorme — some também a
-  espera de quase um minuto na primeira tela.
-- **Continuar no free:** dá para usar sabendo que é volátil. O catálogo se
-  reconstrói sozinho (ele vem dos mercados); o que se perde é conta e lista.
-  Antes de cada deploy, Perfil → **Baixar backup**; depois, **Restaurar
-  backup**.
+- **RLS.** As tabelas nascem em `public`, que no Supabase fica ao alcance da API
+  pública do projeto (a *anon key* vai no navegador de qualquer visitante). Por
+  isso o app **liga Row Level Security em todas as tabelas e não cria nenhuma
+  policy**: essa API não lê nem escreve uma linha, enquanto o servidor —
+  que conecta como dono das tabelas — continua trabalhando normalmente. Aqui
+  tem e-mail e hash de senha; não é detalhe.
+- **O projeto pausa** depois de 7 dias sem nenhuma atividade, e volta com um
+  clique no painel. Usando o app toda semana, ele não pausa.
 
-Se o serviço já existe, criado à mão sem blueprint: o disco se acrescenta em
-**Settings → Disks → Add Disk** (`Mount Path: /data`, 1 GB), e o
-**DATA_DIR = /data** em **Settings → Environment**. Trocar free por Starter é
-ali mesmo, em **Instance Type**.
+### Render — publicar é colar a connection string
+
+O Render publica direto do GitHub, sem terminal: ele lê o `render.yaml` da raiz.
+
+1. https://dashboard.render.com → **New** → **Blueprint** → escolha o
+   repositório `lista-compras`.
+2. Ele pede as duas variáveis que faltam:
+   - **DATABASE_URL** — a string do Supabase (passo acima).
+   - **INVITE_CODE** — o código que a segunda pessoa digita para entrar na
+     mesma casa.
+3. **Apply**. O endereço sai como `https://lista-compras-xxxx.onrender.com`.
+
+Depois disso, cada `git push` neste branch republica sozinho.
+
+Se o serviço já existe, criado à mão: **Settings → Environment** →
+`DATABASE_URL` e `INVITE_CODE`. Se ele tinha um disco em `/data`, dá para
+remover: o banco não vive mais ali.
+
+O plano **free** agora serve de verdade — o que se perdia nele era o disco, e
+não há mais disco. O único incômodo que resta é o serviço dormir depois de 15
+minutos parado, o que faz a primeira tela demorar quase um minuto; o Starter
+tira o sono.
 
 ### Guardar e devolver os dados
 
@@ -185,6 +213,11 @@ diferentes: cada item viaja com o EAN (ou o nome normalizado), e a restauração
 o liga de novo ao produto do catálogo local quando ele existe por lá.
 
 ### Fly.io — uma máquina com volume
+
+> Com `DATABASE_URL` apontando para um Postgres (a seção do Supabase acima), o
+> volume deixa de ser necessário: dá para pular o passo do disco e definir a
+> variável em vez dele. O passo a passo abaixo é de quando o banco era um
+> arquivo na máquina, e continua funcionando.
 
 A Fly não tem deploy pelo site: o painel mostra o app, os logs, o volume e os
 segredos, mas quem publica é o `flyctl`, no terminal. A configuração abaixo é
@@ -276,10 +309,11 @@ fly deploy --ha=false
 fly open
 ```
 
-**O `--ha=false` não é detalhe.** Por padrão a Fly sobe duas máquinas para
-redundância, e duas máquinas não montam o mesmo volume nem compartilham um
-arquivo SQLite. Uma máquina só — é por isso que `min_machines_running` também
-não deve ser aumentado.
+**O `--ha=false` não é detalhe** enquanto o banco for o volume da máquina: a
+Fly sobe duas máquinas por padrão, e duas máquinas não montam o mesmo volume.
+Com `DATABASE_URL` apontando para um Postgres, essa amarra cai — as duas
+máquinas passam a poder atender, porque o estado não está mais no disco de
+nenhuma delas.
 
 Se o flyctl trocou o nome do app no passo 4, salve isso no repositório para o
 deploy automático usar o nome certo:
@@ -346,10 +380,10 @@ docker compose up -d --build
 O banco fica num volume. Falta o HTTPS: ponha um Caddy ou nginx na frente com
 um domínio, ou use um Cloudflare Tunnel apontando para a porta 3000.
 
-O `Dockerfile` é multi-estágio por um motivo concreto: `better-sqlite3` é
-módulo nativo, e o instalador tenta baixar um binário pronto e **compila** se
-não houver um para a plataforma. O compilador fica só no estágio que instala as
-dependências; a imagem final não o carrega.
+O `Dockerfile` é multi-estágio para a imagem final não carregar as
+dependências do front nem o build. Ele não precisa mais de compilador: desde
+que o banco virou Postgres, não há módulo nativo no servidor (o driver `pg` é
+JavaScript puro).
 
 ### Um computador em casa
 
@@ -366,11 +400,10 @@ instala como PWA e não funciona offline** — o que anula metade da ideia.
 
 ### Hospedagens sem disco persistente
 
-Plano gratuito sem disco (o free do Render é o caso mais comum) roda o app, mas
-não guarda nada: o SQLite é um arquivo, e sem disco ele volta vazio a cada
-reinício. Esses planos também derrubam o serviço quando ele fica ocioso, e a
-volta demora bem mais que a suspensão do Fly. Se for o seu caso, o backup do
-Perfil deixa de ser luxo e passa a ser a rotina antes de cada deploy.
+Deixaram de ser um problema: com o banco no Postgres, disco efêmero não apaga
+nada. O que ainda incomoda nesses planos é o serviço dormir quando fica ocioso
+— a primeira tela depois do sono demora. O backup do Perfil continua valendo
+para trocar de hospedagem, ou por precaução.
 
 ### Instalando no celular
 
@@ -442,7 +475,8 @@ no catálogo resolve.
 ```
 server/src/
   index.js            servidor, serve a API e o app compilado
-  db.js               esquema SQLite
+  db.js               esquema Postgres
+  pg.js               conexao e a casca fina sobre o driver
   auth.js             senha (scrypt) e sessão em cookie httpOnly
   categories.js       as categorias da casa e a classificação dos produtos
   catalog.js          catálogo unificado: junta os mercados por EAN
@@ -460,5 +494,5 @@ web/src/
 tools/gerar-icones.mjs  gera os ícones do PWA
 ```
 
-O app é servido pelo próprio servidor Node: um processo, um arquivo SQLite,
+O app é servido pelo próprio servidor Node: um processo, um Postgres do lado,
 nenhum serviço externo.

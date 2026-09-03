@@ -3,6 +3,7 @@
  * as categorias ja tem produto, a busca responde do cache e a comparacao de
  * preco funciona no primeiro uso. Rodar: npm run seed
  */
+import { migrate } from '../db.js';
 import { unifiedSearch } from '../catalog.js';
 import { TODOS_OS_TERMOS } from '../catalog-terms.js';
 import { categoryCounts } from '../catalog.js';
@@ -12,6 +13,7 @@ const TERMOS = TODOS_OS_TERMOS;
 const pausa = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
+  await migrate();
   const apenas = process.argv[2] ? Number(process.argv[2]) : TERMOS.length;
   const termos = TERMOS.slice(0, apenas);
   console.log(`buscando ${termos.length} termos nos quatro mercados…\n`);
@@ -35,7 +37,7 @@ async function main() {
   console.log(`\n${ok} produtos gravados.`);
   if (falhas.size) console.log('mercados que falharam em algum termo:', [...falhas].map(([m, n]) => `${m} (${n}x)`).join(', '));
   console.log('\npor categoria:');
-  for (const row of categoryCounts().sort((a, b) => b.total - a.total)) {
+  for (const row of (await categoryCounts()).sort((a, b) => b.total - a.total)) {
     console.log(`  ${row.category.padEnd(12)} ${row.total}`);
   }
 }

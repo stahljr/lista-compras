@@ -15,14 +15,14 @@ async function priceItems(items, { refresh = true } = {}) {
   for (const item of items) {
     let product = null;
     if (item.product_id) {
-      product = refresh ? await fillMissingOffers(item.product_id) : hydrate(item.product_id);
+      product = refresh ? await fillMissingOffers(item.product_id) : await hydrate(item.product_id);
     } else {
-      product = searchLocal(item.name, { limit: 1 })[0] || null;
+      product = (await searchLocal(item.name, { limit: 1 }))[0] || null;
     }
 
     const offers = (product?.offers || []).filter((o) => o.available && o.price > 0);
     if (!offers.length) {
-      const stats = priceStats(matchKey({ name: item.name }));
+      const stats = await priceStats(matchKey({ name: item.name }));
       unpriced.push({
         id: item.id,
         name: item.name,

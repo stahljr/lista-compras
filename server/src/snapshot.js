@@ -8,8 +8,8 @@ import { hydrate } from './catalog.js';
  * na pratica, a hora de decidir). Dentro do mercado nada disso e consultado de
  * novo: o app le o numero gravado e pronto.
  */
-export function snapshotOf(productId) {
-  const product = hydrate(productId);
+export async function snapshotOf(productId) {
+  const product = await hydrate(productId);
   if (!product) return null;
   const prices = {};
   for (const offer of product.offers) {
@@ -19,9 +19,9 @@ export function snapshotOf(productId) {
   return Object.keys(prices).length ? prices : null;
 }
 
-export function writeSnapshot(listItemId, prices) {
+export async function writeSnapshot(listItemId, prices) {
   if (!prices) return;
-  db.prepare("UPDATE list_items SET price_snapshot = ?, snapshot_at = datetime('now') WHERE id = ?").run(
+  await db.prepare("UPDATE list_items SET price_snapshot = ?, snapshot_at = datetime('now') WHERE id = ?").run(
     JSON.stringify(prices),
     listItemId,
   );
@@ -49,8 +49,10 @@ export function priceFor(item, market) {
 }
 
 /** Grava o snapshot de todos os itens da lista que tem produto vinculado. */
-export function refreshListSnapshots(listId) {
-  const items = db.prepare('SELECT id, product_id FROM list_items WHERE list_id = ? AND product_id IS NOT NULL').all(listId);
-  for (const item of items) writeSnapshot(item.id, snapshotOf(item.product_id));
+export async function refreshListSnapshots(listId) {
+  const items = await db
+    .prepare('SELECT id, product_id FROM list_items WHERE list_id = ? AND product_id IS NOT NULL')
+    .all(listId);
+  for (const item of items) await writeSnapshot(item.id, await snapshotOf(item.product_id));
   return items.length;
 }

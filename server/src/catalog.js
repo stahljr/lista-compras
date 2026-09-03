@@ -67,7 +67,7 @@ const q = {
  * ser recalculados sempre que o produto entra ou muda de categoria. A escrita
  * so acontece se algo mudou: no seed sao milhares de ofertas.
  */
-function refreshDerived(product) {
+async function refreshDerived(product) {
   const sub = subclassify(product.category, product.name);
   const size = parseSize(product.name);
   if (
@@ -77,15 +77,15 @@ function refreshDerived(product) {
   ) {
     return;
   }
-  q.setDerived.run(sub, size?.label ?? null, size?.value ?? null, size?.kind ?? null, product.id);
+  await q.setDerived.run(sub, size?.label ?? null, size?.value ?? null, size?.kind ?? null, product.id);
 }
 
 /** Grava (ou atualiza) um produto vindo de um mercado e devolve o id interno. */
-export const saveOffer = db.transaction((item) => {
+export const saveOffer = db.transaction(async (item) => {
   const key = matchKey(item);
-  let product = q.productByKey.get(key);
+  let product = await q.productByKey.get(key);
   if (!product) {
-    const info = q.insertProduct.run({
+    const novo = await q.insertProduct.get({
       ean: item.ean || null,
       matchKey: key,
       name: item.name,
@@ -94,19 +94,19 @@ export const saveOffer = db.transaction((item) => {
       imageUrl: item.imageUrl || null,
       unit: item.unit || 'un',
     });
-    product = q.productById.get(info.lastInsertRowid);
+    product = await q.productById.get(novo.id);
   } else {
-    q.touchProduct.run({
+    await q.touchProduct.run({
       id: product.id,
       name: item.name,
       brand: item.brand || null,
       imageUrl: item.imageUrl || null,
       category: item.category || 'outros',
     });
-    product = q.productById.get(product.id);
+    product = await q.productById.get(product.id);
   }
-  refreshDerived(product);
-  q.upsertOffer.run({
+  await refreshDerived(product);
+  await q.upsertOffer.run({
     productId: product.id,
     market: item.market.key,
     sku: item.sku,
@@ -121,15 +121,22 @@ export const saveOffer = db.transaction((item) => {
   return product.id;
 });
 
-const saveMany = db.transaction((items) => items.map(saveOffer));
+/**
+ * Uma busca traz dezenas de ofertas de uma vez. Vao todas na mesma transacao:
+ * com o banco fora do servidor, cada ida e volta custa, e abrir uma transacao
+ * por produto multiplicaria isso por trinta.
+ */
+const saveMany = db.transaction(async (items) => {
+  const ids = [];
+  for (const item of items) ids.push(await saveOffer(item));
+  return ids;
+});
 
 /** Monta o objeto que o app consome: produto + preco em cada mercado. */
-export function hydrate(productId) {
-  const product = q.productById.get(productId);
-  if (!product) return null;
-  const offers = q.offersFor
-    .all(productId)
+function montar(product, rows) {
+  const offers = rows
     .filter((o) => o.price > 0)
+    .sort((a, b) => a.price - b.price)
     .map((o) => ({
       market: o.market,
       marketLabel: MARKET_BY_KEY.get(o.market)?.label || o.market,
@@ -160,6 +167,33 @@ export function hydrate(productId) {
   };
 }
 
+export async function hydrate(productId) {
+  const product = await q.productById.get(productId);
+  if (!product) return null;
+  return montar(product, await q.offersFor.all(productId));
+}
+
+/**
+ * Hidrata uma lista de produtos em duas consultas, nao em duas por produto.
+ * Um corredor tem sessenta itens: com o banco fora do servidor, o laco ingenuo
+ * viraria cento e vinte idas e voltas de rede para desenhar uma tela.
+ * A ordem dos ids e mantida -- e nela que vem a relevancia da busca.
+ */
+export async function hidratarVarios(ids) {
+  if (!ids.length) return [];
+  const produtos = await db.prepare('SELECT * FROM products WHERE id = ANY(?)').all(ids);
+  const ofertas = await db.prepare('SELECT * FROM offers WHERE product_id = ANY(?)').all(ids);
+  const porProduto = new Map();
+  for (const oferta of ofertas) {
+    if (!porProduto.has(oferta.product_id)) porProduto.set(oferta.product_id, []);
+    porProduto.get(oferta.product_id).push(oferta);
+  }
+  const porId = new Map(produtos.map((p) => [p.id, p]));
+  return ids
+    .map((id) => (porId.has(id) ? montar(porId.get(id), porProduto.get(id) || []) : null))
+    .filter(Boolean);
+}
+
 /**
  * Busca o termo nos quatro mercados em paralelo e devolve uma lista unica,
  * onde cada produto ja carrega o preco de cada mercado que o tem.
@@ -176,7 +210,7 @@ export async function unifiedSearch(term, { limit = 24, fresh = false } = {}) {
 
   const pending = [];
   for (const market of MARKETS) {
-    const cached = fresh ? null : q.readCache.get(market.key, normalized, ttl);
+    const cached = fresh ? null : await q.readCache.get(market.key, normalized, ttl);
     if (cached) {
       usedCache.push(market.key);
       JSON.parse(cached.product_ids).forEach((id, index) => rank(ranking, id, index));
@@ -189,8 +223,8 @@ export async function unifiedSearch(term, { limit = 24, fresh = false } = {}) {
     const { results, failed: errors } = await acrossMarkets((m) => m.search(normalized, limit), { markets: pending });
     failed.push(...errors);
     for (const { market, value } of results) {
-      const ids = saveMany(value.filter((p) => p.name && p.price > 0));
-      q.writeCache.run(market.key, normalized, JSON.stringify(ids));
+      const ids = await saveMany(value.filter((p) => p.name && p.price > 0));
+      await q.writeCache.run(market.key, normalized, JSON.stringify(ids));
       ids.forEach((id, index) => rank(ranking, id, index));
     }
   }
@@ -212,11 +246,11 @@ export async function unifiedSearch(term, { limit = 24, fresh = false } = {}) {
   // deu ao produto e, por ultimo, estar em mais lojas.
   const palavras = normalized.split(' ').filter((w) => w.length > 2);
   const candidates = [];
-  for (const [id, entry] of ranking) {
-    const product = hydrate(id);
+  for (const product of await hidratarVarios([...ranking.keys()])) {
     // Sem preco em nenhum mercado o produto nao serve para nada aqui: nao da
     // para comparar, nao entra na estimativa da lista.
-    if (!product || !product.marketsCount) continue;
+    if (!product.marketsCount) continue;
+    const entry = ranking.get(product.id);
     const nome = fold(product.name);
     const casadas = palavras.filter((w) => nome.includes(w)).length;
     const match = palavras.length ? casadas / palavras.length : 1;
@@ -245,10 +279,10 @@ function rank(ranking, id, index) {
  * carrinho de verdade vale procurar o EAN nos que faltaram.
  */
 export async function fillMissingOffers(productId, { maxAgeMinutes = 720 } = {}) {
-  const product = q.productById.get(productId);
+  const product = await q.productById.get(productId);
   if (!product?.ean) return hydrate(productId);
 
-  const existing = q.offersFor.all(productId);
+  const existing = await q.offersFor.all(productId);
   const stale = new Set();
   for (const market of MARKETS) {
     const offer = existing.find((o) => o.market === market.key);
@@ -263,13 +297,13 @@ export async function fillMissingOffers(productId, { maxAgeMinutes = 720 } = {})
   const targets = MARKETS.filter((m) => stale.has(m.key));
   const { results } = await acrossMarkets((m) => m.byEan(product.ean), { markets: targets });
   const found = results.map((r) => r.value).filter(Boolean);
-  if (found.length) saveMany(found);
+  if (found.length) await saveMany(found);
   return hydrate(productId);
 }
 
-export function searchLocal(term, { limit = 30 } = {}) {
+export async function searchLocal(term, { limit = 30 } = {}) {
   const like = `%${normalizeTerm(term).replace(/\s+/g, '%')}%`;
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT p.id
          FROM products p
@@ -280,7 +314,7 @@ export function searchLocal(term, { limit = 30 } = {}) {
         LIMIT ?`,
     )
     .all(like, limit);
-  return rows.map((r) => hydrate(r.id)).filter(Boolean);
+  return hidratarVarios(rows.map((r) => r.id));
 }
 
 export function categoryCounts() {
@@ -294,8 +328,8 @@ export function categoryCounts() {
     .all();
 }
 
-export function productsByCategory(category, { limit = 60, offset = 0 } = {}) {
-  const rows = db
+export async function productsByCategory(category, { limit = 60, offset = 0 } = {}) {
+  const rows = await db
     .prepare(
       `SELECT p.id
          FROM products p
@@ -306,7 +340,7 @@ export function productsByCategory(category, { limit = 60, offset = 0 } = {}) {
         LIMIT ? OFFSET ?`,
     )
     .all(category, limit, offset);
-  return rows.map((r) => hydrate(r.id)).filter(Boolean);
+  return hidratarVarios(rows.map((r) => r.id));
 }
 
 /**
@@ -320,8 +354,8 @@ export function productsByCategory(category, { limit = 60, offset = 0 } = {}) {
  * Um corredor tem centenas de produtos, nao milhares: sai numa consulta e o
  * cruzamento e feito aqui, que fica mais simples de ler do que seis SQLs.
  */
-export function categoryView(category, { sub = null, brand = null, size = null, limit = 60, offset = 0 } = {}) {
-  const rows = db
+export async function categoryView(category, { sub = null, brand = null, size = null, limit = 60, offset = 0 } = {}) {
+  const rows = await db
     .prepare(
       `SELECT p.id, p.name, p.brand, p.subcategory, p.size_label, p.size_value,
               COUNT(DISTINCT o.market) AS mercados
@@ -383,10 +417,7 @@ export function categoryView(category, { sub = null, brand = null, size = null, 
     .map(({ ordem, ...resto }) => resto);
 
   const filtrados = rows.filter((r) => casa(r, null));
-  const products = filtrados
-    .slice(offset, offset + limit)
-    .map((r) => hydrate(r.id))
-    .filter(Boolean);
+  const products = await hidratarVarios(filtrados.slice(offset, offset + limit).map((r) => r.id));
 
   return { products, total: filtrados.length, facets: { subs, brands, sizes } };
 }
@@ -400,37 +431,38 @@ export function categoryView(category, { sub = null, brand = null, size = null, 
  * URL: o mercado troca o arquivo da imagem de vez em quando, e o produto
  * continua o mesmo.
  */
-export function setCategoryCover(category, productId) {
+export async function setCategoryCover(category, productId) {
   if (productId == null) {
-    db.prepare('DELETE FROM meta WHERE key = ?').run(`cover:${category}`);
+    await db.prepare('DELETE FROM meta WHERE key = ?').run(`cover:${category}`);
     return null;
   }
-  const product = q.productById.get(productId);
+  const product = await q.productById.get(productId);
   if (!product) return null;
-  metaSet(`cover:${category}`, String(productId));
+  await metaSet(`cover:${category}`, String(productId));
   return product.image_url;
 }
 
-function coverOf(category, products) {
-  const escolhido = metaGet(`cover:${category}`);
+async function coverOf(category, products) {
+  const escolhido = await metaGet(`cover:${category}`);
   if (escolhido) {
-    const p = q.productById.get(Number(escolhido));
+    const p = await q.productById.get(Number(escolhido));
     if (p?.image_url) return { url: p.image_url, escolhida: true };
   }
   // Sem escolha, a foto do primeiro produto do corredor que tenha uma.
   return { url: products.find((p) => p.imageUrl)?.imageUrl || null, escolhida: false };
 }
 
-export function shelves({ perCategory = 10 } = {}) {
-  const counts = new Map(categoryCounts().map((c) => [c.category, c.total]));
+export async function shelves({ perCategory = 10 } = {}) {
+  const counts = new Map((await categoryCounts()).map((c) => [c.category, Number(c.total)]));
   // Todos os corredores aparecem, inclusive os que ainda nao tem produto: um
   // mercado tem o corredor de higiene mesmo quando a prateleira esta por
   // encher, e esconde-lo faz o app parecer quebrado. Vazio, ele se enche na
   // primeira vez que alguem entra.
-  return CATEGORIES.filter((c) => c.key !== 'outros' || counts.get(c.key)).map((c) => {
-    const products = counts.get(c.key) ? productsByCategory(c.key, { limit: perCategory }) : [];
-    const cover = coverOf(c.key, products);
-    return {
+  const corredores = [];
+  for (const c of CATEGORIES.filter((c) => c.key !== 'outros' || counts.get(c.key))) {
+    const products = counts.get(c.key) ? await productsByCategory(c.key, { limit: perCategory }) : [];
+    const cover = await coverOf(c.key, products);
+    corredores.push({
       key: c.key,
       label: c.label,
       emoji: c.emoji,
@@ -438,8 +470,9 @@ export function shelves({ perCategory = 10 } = {}) {
       coverUrl: cover.url,
       coverChosen: cover.escolhida,
       products,
-    };
-  });
+    });
+  }
+  return corredores;
 }
 
 /**
@@ -451,11 +484,15 @@ export async function fillCategory(key, { minimo = 12 } = {}) {
   if (!termos.length) return { buscados: 0 };
   let buscados = 0;
   for (const termo of termos) {
-    const atual = db
-      .prepare(
-        `SELECT COUNT(*) AS n FROM products p JOIN offers o ON o.product_id = p.id AND o.price > 0 WHERE p.category = ?`,
-      )
-      .get(key).n;
+    const atual = Number(
+      (
+        await db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM products p JOIN offers o ON o.product_id = p.id AND o.price > 0 WHERE p.category = ?`,
+          )
+          .get(key)
+      ).n,
+    );
     if (atual >= minimo) break;
     await unifiedSearch(termo, { limit: 24 }).catch(() => null);
     buscados++;
@@ -471,10 +508,10 @@ const CLASSIFIER_VERSION = 5;
  * Reclassifica o catalogo com as regras atuais. Usa a categoria que o mercado
  * informou (guardada na oferta) mais o nome, do mesmo jeito que na entrada.
  */
-export function reclassifyAll() {
+export async function reclassifyAll() {
   // Produto com categoria travada tambem entra: a categoria dele nao se mexe,
   // mas subdivisao e tamanho vem do nome e podem estar por preencher.
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT p.id, p.name, p.category, p.category_locked, p.subcategory, p.size_label, p.size_value,
               (SELECT o.category FROM offers o WHERE o.product_id = p.id AND o.category IS NOT NULL LIMIT 1) AS raw
@@ -483,28 +520,28 @@ export function reclassifyAll() {
     .all();
   const update = db.prepare('UPDATE products SET category = ? WHERE id = ?');
   let mudados = 0;
-  const run = db.transaction(() => {
+  const run = db.transaction(async () => {
     for (const row of rows) {
       let categoria = row.category;
       if (!row.category_locked) {
         categoria = classify(row.raw || '', row.name);
         if (categoria !== row.category) {
-          update.run(categoria, row.id);
+          await update.run(categoria, row.id);
           mudados++;
         }
       }
-      refreshDerived({ ...row, category: categoria });
+      await refreshDerived({ ...row, category: categoria });
     }
   });
-  run();
+  await run();
   return { total: rows.length, mudados };
 }
 
 /** Roda a reclassificacao uma vez quando as regras mudam de versao. */
-export function ensureClassifierFresh() {
-  if (Number(metaGet('classifier') || 0) >= CLASSIFIER_VERSION) return null;
-  const r = reclassifyAll();
-  metaSet('classifier', CLASSIFIER_VERSION);
+export async function ensureClassifierFresh() {
+  if (Number((await metaGet('classifier')) || 0) >= CLASSIFIER_VERSION) return null;
+  const r = await reclassifyAll();
+  await metaSet('classifier', CLASSIFIER_VERSION);
   return r;
 }
 
@@ -514,11 +551,15 @@ export function ensureClassifierFresh() {
  * classificador automatico acerta na maioria, mas quando erra e a pessoa
  * arruma, nao faz sentido a proxima versao das regras desfazer.
  */
-export function setCategory(productId, category) {
-  const info = db
+export async function setCategory(productId, category) {
+  const info = await db
     .prepare("UPDATE products SET category = ?, category_locked = 1, updated_at = datetime('now') WHERE id = ?")
     .run(category, productId);
-  return info.changes > 0 ? hydrate(productId) : null;
+  if (!info.changes) return null;
+  // A subdivisao segue a categoria: mudar de corredor a mao tem de refazer o
+  // "tipo", senao o produto vai para o corredor novo com o filtro do antigo.
+  await refreshDerived(await q.productById.get(productId));
+  return hydrate(productId);
 }
 
 /**
@@ -529,13 +570,13 @@ export function setCategory(productId, category) {
  * mesmo tamanho, mesma marca, e o quanto o nome bate. Nao consulta a rede:
  * dentro do mercado o sinal e ruim e a resposta tem de ser imediata.
  */
-export function alternativesIn(market, { productId = null, name = '', limit = 6 } = {}) {
-  const base = productId ? q.productById.get(productId) : null;
+export async function alternativesIn(market, { productId = null, name = '', limit = 6 } = {}) {
+  const base = productId ? await q.productById.get(productId) : null;
   const alvo = fold(base?.name || name);
   if (!alvo) return [];
   const palavras = alvo.split(/[^a-z0-9]+/).filter((w) => w.length > 2);
 
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT p.id, p.name, p.brand, p.subcategory, p.size_label, MIN(o.price) AS preco
          FROM products p
@@ -560,11 +601,28 @@ export function alternativesIn(market, { productId = null, name = '', limit = 6 
     pontuados.push({ id: row.id, pontos, preco: row.preco });
   }
 
-  return pontuados
-    .sort((a, b) => b.pontos - a.pontos || a.preco - b.preco)
-    .slice(0, limit)
-    .map((c) => ({ product: hydrate(c.id), priceHere: c.preco }))
-    .filter((c) => c.product);
+  const melhores = pontuados.sort((a, b) => b.pontos - a.pontos || a.preco - b.preco).slice(0, limit);
+  const produtos = new Map((await hidratarVarios(melhores.map((c) => c.id))).map((p) => [p.id, p]));
+  return melhores
+    .filter((c) => produtos.has(c.id))
+    .map((c) => ({ product: produtos.get(c.id), priceHere: c.preco }));
+}
+
+/**
+ * A chave com que o preco pago entra no historico -- e com que ele e lido
+ * depois. Item com produto vinculado usa a chave do produto (o EAN, quando
+ * existe); item escrito a mao usa o nome normalizado.
+ *
+ * Isso estava desencontrado: o fecho da compra gravava sempre pelo nome, e o
+ * dialogo do produto lia pelo EAN. Resultado: "Ja pagamos" ficava vazio para
+ * todo produto de catalogo, que e justamente a maioria.
+ */
+export async function historyKeyFor({ productId, name }) {
+  if (productId) {
+    const row = await db.prepare('SELECT match_key FROM products WHERE id = ?').get(productId);
+    if (row?.match_key) return row.match_key;
+  }
+  return matchKey({ name });
 }
 
 export function priceStats(key) {

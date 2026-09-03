@@ -10,7 +10,12 @@ import { backupRouter } from './routes/backup.js';
 import { subscribe } from './realtime.js';
 import { startRefresher } from './refresher.js';
 import { ensureClassifierFresh } from './catalog.js';
-import './db.js';
+import { migrate } from './db.js';
+
+// O banco vem antes de tudo: sem esquema no ar, nao ha login nem lista. Se o
+// Postgres nao responder, e melhor o processo nao subir do que subir servindo
+// erro em cada tela.
+const banco = await migrate();
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -54,18 +59,23 @@ app.use((err, _req, res, _next) => {
   res.status(status).json({ error: err.message || 'erro interno' });
 });
 
-purgeExpiredSessions();
-setInterval(purgeExpiredSessions, 6 * 3600 * 1000).unref();
+await purgeExpiredSessions();
+setInterval(() => void purgeExpiredSessions(), 6 * 3600 * 1000).unref();
 
 // As regras de categoria mudam com o tempo; o catalogo ja gravado precisa
 // acompanhar, senao "molho de tomate" fica no corredor do hortifruti para
 // sempre.
-const reclass = ensureClassifierFresh();
+const reclass = await ensureClassifierFresh();
 if (reclass) console.log(`[categorias] ${reclass.mudados} de ${reclass.total} produtos reclassificados`);
 
 startRefresher();
 
 app.listen(PORT, () => {
   console.log(`lista-compras: API em http://localhost:${PORT}`);
+  console.log(
+    banco === 'postgres'
+      ? '[banco] Postgres externo (DATABASE_URL): as contas e as listas sobrevivem ao deploy'
+      : '[banco] Postgres embutido em arquivo -- para valer, defina DATABASE_URL',
+  );
   if (!fs.existsSync(webDist)) console.log('front nao compilado ainda (rode "npm run build" ou use "npm run dev")');
 });

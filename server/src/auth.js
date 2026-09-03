@@ -33,10 +33,10 @@ export async function verifyPassword(password, stored) {
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
 
-export function createSession(userId) {
+export async function createSession(userId) {
   const token = crypto.randomBytes(32).toString('base64url');
   const expires = new Date(Date.now() + SESSION_DAYS * 864e5);
-  db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(
+  await db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(
     token,
     userId,
     expires.toISOString().replace('T', ' ').slice(0, 19),
@@ -44,13 +44,15 @@ export function createSession(userId) {
   return { token, expires };
 }
 
-export function destroySession(token) {
-  if (token) db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+export async function destroySession(token) {
+  if (token) await db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
 }
 
+// O apelido vai entre aspas: sem elas o Postgres devolveria "householdid", e a
+// sessao passaria a nao saber de que casa e o usuario.
 const selectSessionUser = () =>
   db.prepare(`
-    SELECT u.id, u.name, u.email, u.color, u.household_id AS householdId
+    SELECT u.id, u.name, u.email, u.color, u.household_id AS "householdId"
       FROM sessions s
       JOIN users u ON u.id = s.user_id
      WHERE s.token = ? AND s.expires_at > datetime('now')
@@ -67,11 +69,20 @@ function readCookie(req, name) {
   return null;
 }
 
-/** Populates req.user when a valid session cookie is present. Never rejects. */
-export function attachUser(req, _res, next) {
+/**
+ * Populates req.user when a valid session cookie is present. Cookie ausente ou
+ * invalido nao e erro; falha de banco e.
+ */
+export async function attachUser(req, _res, next) {
   const token = readCookie(req, COOKIE_NAME);
   req.sessionToken = token;
-  req.user = token ? selectSessionUser().get(token) || null : null;
+  try {
+    req.user = token ? (await selectSessionUser().get(token)) || null : null;
+  } catch (err) {
+    // Banco fora do ar nao pode virar "sem sessao" silencioso: sem isso, a
+    // tela de login apareceria como se a conta nao existisse.
+    return next(err);
+  }
   next();
 }
 
@@ -101,6 +112,6 @@ export function clearSessionCookie(res) {
   res.setHeader('Set-Cookie', `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
 }
 
-export function purgeExpiredSessions() {
-  db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
+export async function purgeExpiredSessions() {
+  await db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
 }

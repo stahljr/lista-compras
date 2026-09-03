@@ -1,31 +1,30 @@
 # Blueprint do Render: https://render.com/docs/infrastructure-as-code
 #
-# O app e um processo Node com um arquivo SQLite ao lado. O disco em /data e o
-# que faz a lista sobreviver a um deploy -- e disco no Render existe **so em
-# plano pago** (instancia Starter, o mais barato). No plano free o sistema de
-# arquivos e apagado a cada build e a cada reinicio: o app funciona, mas a
-# casa, os usuarios e as listas somem sem aviso. Se for ficar no free, use o
-# botao "Baixar backup" no Perfil antes de cada deploy.
+# Nao precisa mais de disco: os dados moram num Postgres gerenciado
+# (DATABASE_URL). E o que faz o login valer em qualquer aparelho e sobreviver a
+# deploy, reinicio e ao sono do plano gratuito.
 services:
   - type: web
     name: lista-compras
     runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: starter
-    # O Render nao tem regiao no Brasil; Virginia e a de menor latencia daqui.
+    # O free serve: o que se perdia nele era o disco, e nao ha mais disco. O
+    # unico incomodo e o servico dormir depois de 15 min parado -- a primeira
+    # tela depois disso demora quase um minuto. Trocar para "starter" resolve.
+    plan: free
+    # O Render nao tem regiao no Brasil; Virginia e a de menor latencia daqui,
+    # e a mesma para escolher no Supabase (us-east-1), para o banco ficar perto.
     region: virginia
     healthCheckPath: /api/health
     autoDeploy: true
-    disk:
-      name: dados
-      mountPath: /data
-      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
-      - key: DATA_DIR
-        value: /data
-      # Codigo que a segunda pessoa digita para entrar na mesma casa. Fica em
-      # branco no blueprint de proposito: quem define o valor e voce, no painel.
+      # Connection string do Postgres. No Supabase: Connect > Connection string
+      # > escolha o *pooler* (o host aws-...pooler.supabase.com), porque a
+      # conexao direta e so IPv6 e o Render nao alcanca.
+      - key: DATABASE_URL
+        sync: false
+      # Codigo que a segunda pessoa digita para entrar na mesma casa.
       - key: INVITE_CODE
         sync: false

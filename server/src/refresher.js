@@ -12,7 +12,7 @@ export function startRefresher() {
   if (!hours || hours <= 0) return;
 
   async function run() {
-    const rows = db
+    const rows = await db
       .prepare(
         `SELECT DISTINCT product_id AS id FROM list_items WHERE product_id IS NOT NULL
          UNION

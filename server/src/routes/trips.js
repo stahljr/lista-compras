@@ -1,8 +1,8 @@
 import express from 'express';
-import { db } from '../db.js';
+import { db, nowIso } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { getGeneralList, assertListInHousehold, assertTripInHousehold } from '../households.js';
-import { hydrate, matchKey, priceStats, alternativesIn } from '../catalog.js';
+import { hydrate, historyKeyFor, priceStats, alternativesIn } from '../catalog.js';
 import { priceFor, readSnapshot, snapshotOf } from '../snapshot.js';
 import { MARKET_BY_KEY } from '../markets/index.js';
 import { categoryOrder, categoryLabel } from '../categories.js';
@@ -14,11 +14,11 @@ tripsRouter.use(requireAuth);
 const round = (n) => Math.round(n * 100) / 100;
 
 /** As listas que compoem este carrinho. */
-function sourceLists(tripId) {
-  return db
+async function sourceLists(tripId) {
+  const rows = await db
     .prepare('SELECT list_id AS id, list_name AS name, kind, reusable FROM trip_lists WHERE trip_id = ?')
-    .all(tripId)
-    .map((l) => ({ id: l.id, name: l.name, kind: l.kind, reusable: !!l.reusable }));
+    .all(tripId);
+  return rows.map((l) => ({ id: l.id, name: l.name, kind: l.kind, reusable: !!l.reusable }));
 }
 
 /**
@@ -26,55 +26,65 @@ function sourceLists(tripId) {
  * soma a quantidade em vez de virar duas linhas -- se o arroz esta na lista
  * geral e na do churrasco, e um item de quantidade 2.
  */
-const mergeListIntoTrip = db.transaction((trip, list, market) => {
-  const items = db.prepare('SELECT * FROM list_items WHERE list_id = ?').all(list.id);
+const mergeListIntoTrip = db.transaction(async (trip, list, market) => {
+  const items = await db.prepare('SELECT * FROM list_items WHERE list_id = ?').all(list.id);
   let added = 0;
   for (const item of items) {
     const existing = item.product_id
-      ? db.prepare('SELECT * FROM trip_items WHERE trip_id = ? AND product_id = ?').get(trip.id, item.product_id)
-      : db
+      ? await db.prepare('SELECT * FROM trip_items WHERE trip_id = ? AND product_id = ?').get(trip.id, item.product_id)
+      : await db
           .prepare('SELECT * FROM trip_items WHERE trip_id = ? AND product_id IS NULL AND lower(name) = lower(?)')
           .get(trip.id, item.name);
     if (existing) {
-      db.prepare('UPDATE trip_items SET qty = qty + ? WHERE id = ?').run(item.qty, existing.id);
-      db.prepare('INSERT OR IGNORE INTO trip_item_sources (trip_item_id, list_item_id, list_id) VALUES (?, ?, ?)').run(
-        existing.id, item.id, list.id,
-      );
+      await db.prepare('UPDATE trip_items SET qty = qty + ? WHERE id = ?').run(item.qty, existing.id);
+      await db
+        .prepare(
+          `INSERT INTO trip_item_sources (trip_item_id, list_item_id, list_id) VALUES (?, ?, ?)
+           ON CONFLICT (trip_item_id, list_item_id) DO NOTHING`,
+        )
+        .run(existing.id, item.id, list.id);
       continue;
     }
     // Item com mercado escolhido vale pelo preco de lá: a decisao de onde
     // comprar aquele item ja foi tomada quando ele entrou na lista.
-    const expected = priceFor(item, item.market || market) ?? priceStats(matchKey({ name: item.name }))?.last ?? null;
-    const info = db
+    const expected =
+      priceFor(item, item.market || market) ??
+      (await priceStats(await historyKeyFor({ productId: item.product_id, name: item.name })))?.last ??
+      null;
+    const novo = await db
       .prepare(
         `INSERT INTO trip_items (trip_id, list_item_id, product_id, name, qty, unit, category, image_url, note, expected,
                                  source_list_id, market, price_snapshot)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       )
-      .run(
+      .get(
         trip.id, item.id, item.product_id, item.name, item.qty, item.unit, item.category, item.image_url, item.note,
         expected, list.id, item.market, item.price_snapshot,
       );
-    db.prepare('INSERT INTO trip_item_sources (trip_item_id, list_item_id, list_id) VALUES (?, ?, ?)').run(
-      info.lastInsertRowid, item.id, list.id,
-    );
+    await db
+      .prepare('INSERT INTO trip_item_sources (trip_item_id, list_item_id, list_id) VALUES (?, ?, ?)')
+      .run(novo.id, item.id, list.id);
     added++;
   }
-  db.prepare(
-    'INSERT OR IGNORE INTO trip_lists (trip_id, list_id, list_name, kind, reusable) VALUES (?, ?, ?, ?, ?)',
-  ).run(trip.id, list.id, list.name, list.kind, list.reusable ? 1 : 0);
+  await db
+    .prepare(
+      `INSERT INTO trip_lists (trip_id, list_id, list_name, kind, reusable) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT (trip_id, list_id) DO NOTHING`,
+    )
+    .run(trip.id, list.id, list.name, list.kind, list.reusable ? 1 : 0);
   return added;
 });
 
-function tripItems(tripId, mercadoDaVez = null) {
-  return db
+async function tripItems(tripId, mercadoDaVez = null) {
+  const rows = await db
     .prepare(
       `SELECT t.*, u.name AS picked_by_name, u.color AS picked_by_color
          FROM trip_items t
          LEFT JOIN users u ON u.id = t.picked_by
         WHERE t.trip_id = ?`,
     )
-    .all(tripId)
+    .all(tripId);
+  return rows
     .map((r) => {
       // O retrato de precos veio com o item; e ele que responde, sem rede, se
       // o mercado onde estamos tem o item -- e por quanto.
@@ -123,8 +133,8 @@ function tripItems(tripId, mercadoDaVez = null) {
  * Estado da compra: quanto ja foi gasto, quanto falta e -- a pergunta que
  * importa no meio do corredor -- se ja pegamos tudo.
  */
-function tripPayload(trip) {
-  const items = tripItems(trip.id, trip.market);
+async function tripPayload(trip) {
+  const items = await tripItems(trip.id, trip.market);
   const picked = items.filter((i) => i.picked);
   const missing = items.filter((i) => !i.picked);
   const spent = round(picked.reduce((acc, i) => acc + (i.subtotal || 0), 0));
@@ -144,7 +154,7 @@ function tripPayload(trip) {
 
   return {
     id: trip.id,
-    lists: sourceLists(trip.id),
+    lists: await sourceLists(trip.id),
     listName: trip.list_name,
     market: trip.market,
     marketLabel: trip.market ? MARKET_BY_KEY.get(trip.market)?.label || trip.market : null,
@@ -173,65 +183,77 @@ function tripPayload(trip) {
  * lista de conferencia da loja. Nao consulta preco nenhum -- usa o que ficou
  * gravado quando as listas foram montadas.
  */
-tripsRouter.post('/', (req, res, next) => {
+tripsRouter.post('/', async (req, res, next) => {
   try {
     const householdId = req.user.householdId;
-    const active = db.prepare("SELECT * FROM trips WHERE household_id = ? AND status = 'active'").get(householdId);
-    if (active) return res.status(409).json({ error: 'ja existe um carrinho em andamento', trip: tripPayload(active) });
+    const active = await db.prepare("SELECT * FROM trips WHERE household_id = ? AND status = 'active'").get(householdId);
+    if (active) {
+      return res.status(409).json({ error: 'ja existe um carrinho em andamento', trip: await tripPayload(active) });
+    }
 
     const market = req.body?.market ? String(req.body.market) : null;
     if (market && !MARKET_BY_KEY.has(market)) return res.status(400).json({ error: 'mercado desconhecido' });
 
     const pedidas = Array.isArray(req.body?.listIds) && req.body.listIds.length
       ? req.body.listIds.map(Number)
-      : [getGeneralList(householdId).id];
-    const lists = [...new Set(pedidas)].map((id) => assertListInHousehold(id, householdId));
-    const total = lists.reduce(
-      (acc, l) => acc + db.prepare('SELECT COUNT(*) AS n FROM list_items WHERE list_id = ?').get(l.id).n,
-      0,
-    );
+      : [(await getGeneralList(householdId)).id];
+    const lists = [];
+    for (const id of new Set(pedidas)) lists.push(await assertListInHousehold(id, householdId));
+    let total = 0;
+    for (const l of lists) {
+      total += (await db.prepare('SELECT COUNT(*) AS n FROM list_items WHERE list_id = ?').get(l.id)).n;
+    }
     if (!total) return res.status(400).json({ error: 'as listas escolhidas estao vazias' });
 
     const nome = lists.length === 1 ? lists[0].name : `${lists.length} listas`;
-    const info = db
-      .prepare('INSERT INTO trips (household_id, list_id, list_name, market, started_by) VALUES (?, ?, ?, ?, ?)')
-      .run(householdId, lists[0].id, nome, market, req.user.id);
-    const trip = db.prepare('SELECT * FROM trips WHERE id = ?').get(info.lastInsertRowid);
+    const trip = await db
+      .prepare(
+        `INSERT INTO trips (household_id, list_id, list_name, market, started_by)
+         VALUES (?, ?, ?, ?, ?) RETURNING *`,
+      )
+      .get(householdId, lists[0].id, nome, market, req.user.id);
 
-    for (const list of lists) mergeListIntoTrip(trip, list, market);
+    for (const list of lists) await mergeListIntoTrip(trip, list, market);
 
     publish(householdId, 'trip', { tripId: trip.id });
-    res.json({ trip: tripPayload(trip) });
+    res.json({ trip: await tripPayload(trip) });
   } catch (err) {
     next(err);
   }
 });
 
 /** Lembrou de uma lista inteira depois de comecar: entra no carrinho. */
-tripsRouter.post('/:id/add-list', (req, res, next) => {
+tripsRouter.post('/:id/add-list', async (req, res, next) => {
   try {
-    const trip = assertTripInHousehold(Number(req.params.id), req.user.householdId);
+    const trip = await assertTripInHousehold(Number(req.params.id), req.user.householdId);
     if (trip.status !== 'active') return res.status(409).json({ error: 'este carrinho ja foi fechado' });
-    const list = assertListInHousehold(Number(req.body?.listId), req.user.householdId);
-    if (sourceLists(trip.id).some((l) => l.id === list.id)) {
+    const list = await assertListInHousehold(Number(req.body?.listId), req.user.householdId);
+    if ((await sourceLists(trip.id)).some((l) => l.id === list.id)) {
       return res.status(409).json({ error: 'esta lista ja esta no carrinho' });
     }
-    const added = mergeListIntoTrip(trip, list, trip.market);
+    const added = await mergeListIntoTrip(trip, list, trip.market);
     publish(req.user.householdId, 'trip', { tripId: trip.id });
-    res.json({ trip: tripPayload(db.prepare('SELECT * FROM trips WHERE id = ?').get(trip.id)), added });
+    res.json({ trip: await tripPayload(await db.prepare('SELECT * FROM trips WHERE id = ?').get(trip.id)), added });
   } catch (err) {
     next(err);
   }
 });
 
-tripsRouter.get('/active', (req, res) => {
-  const trip = db.prepare("SELECT * FROM trips WHERE household_id = ? AND status = 'active'").get(req.user.householdId);
-  res.json({ trip: trip ? tripPayload(trip) : null });
+tripsRouter.get('/active', async (req, res, next) => {
+  try {
+    const trip = await db
+      .prepare("SELECT * FROM trips WHERE household_id = ? AND status = 'active'")
+      .get(req.user.householdId);
+    res.json({ trip: trip ? await tripPayload(trip) : null });
+  } catch (err) {
+    next(err);
+  }
 });
 
-tripsRouter.get('/', (req, res) => {
-  const trips = db
-    .prepare(
+tripsRouter.get('/', async (req, res, next) => {
+  try {
+    const trips = await db
+      .prepare(
       `SELECT t.*,
               (SELECT COUNT(*) FROM trip_items ti WHERE ti.trip_id = t.id) AS total_items,
               (SELECT COUNT(*) FROM trip_items ti WHERE ti.trip_id = t.id AND ti.picked = 1) AS picked_items,
@@ -245,37 +267,43 @@ tripsRouter.get('/', (req, res) => {
         ORDER BY t.started_at DESC
         LIMIT ?`,
     )
-    .all(req.user.householdId, Math.min(Number(req.query.limit) || 30, 100));
-  res.json({
-    trips: trips.map((t) => ({
-      id: t.id,
-      listName: t.list_name,
-      market: t.market,
-      marketLabel: t.market ? MARKET_BY_KEY.get(t.market)?.label || t.market : null,
-      status: t.status,
-      startedAt: t.started_at,
-      finishedAt: t.finished_at,
-      totalItems: t.total_items,
-      pickedItems: t.picked_items,
-      spent: round(t.spent),
-    })),
-  });
+      .all(req.user.householdId, Math.min(Number(req.query.limit) || 30, 100));
+    res.json({
+      trips: trips.map((t) => ({
+        id: t.id,
+        listName: t.list_name,
+        market: t.market,
+        marketLabel: t.market ? MARKET_BY_KEY.get(t.market)?.label || t.market : null,
+        status: t.status,
+        startedAt: t.started_at,
+        finishedAt: t.finished_at,
+        totalItems: Number(t.total_items),
+        pickedItems: Number(t.picked_items),
+        spent: round(t.spent),
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
-tripsRouter.get('/:id', (req, res, next) => {
+tripsRouter.get('/:id', async (req, res, next) => {
   try {
-    res.json({ trip: tripPayload(assertTripInHousehold(Number(req.params.id), req.user.householdId)) });
+    const trip = await assertTripInHousehold(Number(req.params.id), req.user.householdId);
+    res.json({ trip: await tripPayload(trip) });
   } catch (err) {
     next(err);
   }
 });
 
 /** Marcar como pego e anotar o preco da etiqueta. */
-tripsRouter.patch('/:id/items/:itemId', (req, res, next) => {
+tripsRouter.patch('/:id/items/:itemId', async (req, res, next) => {
   try {
-    const trip = assertTripInHousehold(Number(req.params.id), req.user.householdId);
+    const trip = await assertTripInHousehold(Number(req.params.id), req.user.householdId);
     if (trip.status !== 'active') return res.status(409).json({ error: 'esta compra ja foi encerrada' });
-    const item = db.prepare('SELECT * FROM trip_items WHERE id = ? AND trip_id = ?').get(Number(req.params.itemId), trip.id);
+    const item = await db
+      .prepare('SELECT * FROM trip_items WHERE id = ? AND trip_id = ?')
+      .get(Number(req.params.itemId), trip.id);
     if (!item) return res.status(404).json({ error: 'item nao encontrado' });
 
     const body = req.body || {};
@@ -289,25 +317,29 @@ tripsRouter.patch('/:id/items/:itemId', (req, res, next) => {
       return res.status(400).json({ error: 'preco invalido' });
     }
 
-    db.prepare(
-      `UPDATE trip_items
-          SET picked = ?, unit_price = ?, picked_qty = ?,
-              picked_by = CASE WHEN ? = 1 THEN ? ELSE NULL END,
-              picked_at = CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END
-        WHERE id = ?`,
-    ).run(picked, unitPrice, pickedQty, picked, req.user.id, picked, item.id);
+    // Quem pegou e quando saem prontos do JavaScript. Antes vinham de um CASE
+    // no SQL, e ali o Postgres nao tem como saber o tipo do parametro (o outro
+    // ramo do CASE e NULL): dava "column picked_by is of type integer but
+    // expression is of type text". Atribuindo direto na coluna, o tipo vem dela.
+    await db
+      .prepare(
+        `UPDATE trip_items
+            SET picked = ?, unit_price = ?, picked_qty = ?, picked_by = ?, picked_at = ?
+          WHERE id = ?`,
+      )
+      .run(picked, unitPrice, pickedQty, picked ? req.user.id : null, picked ? nowIso() : null, item.id);
 
     publish(req.user.householdId, 'trip', { tripId: trip.id });
-    res.json({ trip: tripPayload(trip) });
+    res.json({ trip: await tripPayload(trip) });
   } catch (err) {
     next(err);
   }
 });
 
 /** Lembrou de algo no corredor: entra na compra (e depois na lista, se quiser). */
-tripsRouter.post('/:id/items', (req, res, next) => {
+tripsRouter.post('/:id/items', async (req, res, next) => {
   try {
-    const trip = assertTripInHousehold(Number(req.params.id), req.user.householdId);
+    const trip = await assertTripInHousehold(Number(req.params.id), req.user.householdId);
     if (trip.status !== 'active') return res.status(409).json({ error: 'esta compra ja foi encerrada' });
     const body = req.body || {};
     let name = String(body.name || '').trim();
@@ -318,7 +350,7 @@ tripsRouter.post('/:id/items', (req, res, next) => {
     let expected = null;
 
     if (productId) {
-      const product = hydrate(productId);
+      const product = await hydrate(productId);
       if (!product) return res.status(404).json({ error: 'produto nao encontrado' });
       name = name || product.name;
       category = product.category;
@@ -328,8 +360,8 @@ tripsRouter.post('/:id/items', (req, res, next) => {
     }
     if (!name) return res.status(400).json({ error: 'informe o item' });
 
-    const retrato = productId ? snapshotOf(productId) : null;
-    db.prepare(
+    const retrato = productId ? await snapshotOf(productId) : null;
+    await db.prepare(
       `INSERT INTO trip_items (trip_id, product_id, name, qty, unit, category, image_url, expected, price_snapshot, market)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
@@ -339,7 +371,7 @@ tripsRouter.post('/:id/items', (req, res, next) => {
     );
 
     publish(req.user.householdId, 'trip', { tripId: trip.id });
-    res.json({ trip: tripPayload(trip) });
+    res.json({ trip: await tripPayload(trip) });
   } catch (err) {
     next(err);
   }
@@ -349,14 +381,16 @@ tripsRouter.post('/:id/items', (req, res, next) => {
  * O que este mercado tem de parecido com o item que ele nao tem. Sem isso a
  * resposta para "o Festval nao tem esse arroz" seria voltar para casa.
  */
-tripsRouter.get('/:id/items/:itemId/alternatives', (req, res, next) => {
+tripsRouter.get('/:id/items/:itemId/alternatives', async (req, res, next) => {
   try {
-    const trip = assertTripInHousehold(Number(req.params.id), req.user.householdId);
-    const item = db.prepare('SELECT * FROM trip_items WHERE id = ? AND trip_id = ?').get(Number(req.params.itemId), trip.id);
+    const trip = await assertTripInHousehold(Number(req.params.id), req.user.householdId);
+    const item = await db
+      .prepare('SELECT * FROM trip_items WHERE id = ? AND trip_id = ?')
+      .get(Number(req.params.itemId), trip.id);
     if (!item) return res.status(404).json({ error: 'item nao encontrado' });
     const market = req.query.market ? String(req.query.market) : trip.market;
     if (!market) return res.status(400).json({ error: 'esta compra nao esta num mercado especifico' });
-    const options = alternativesIn(market, { productId: item.product_id, name: item.name, limit: 6 });
+    const options = await alternativesIn(market, { productId: item.product_id, name: item.name, limit: 6 });
     res.json({
       market,
       marketLabel: MARKET_BY_KEY.get(market)?.label || market,
@@ -368,43 +402,47 @@ tripsRouter.get('/:id/items/:itemId/alternatives', (req, res, next) => {
 });
 
 /** Troca o item pelo parecido escolhido, mantendo a quantidade. */
-tripsRouter.post('/:id/items/:itemId/swap', (req, res, next) => {
+tripsRouter.post('/:id/items/:itemId/swap', async (req, res, next) => {
   try {
-    const trip = assertTripInHousehold(Number(req.params.id), req.user.householdId);
+    const trip = await assertTripInHousehold(Number(req.params.id), req.user.householdId);
     if (trip.status !== 'active') return res.status(409).json({ error: 'esta compra ja foi encerrada' });
-    const item = db.prepare('SELECT * FROM trip_items WHERE id = ? AND trip_id = ?').get(Number(req.params.itemId), trip.id);
+    const item = await db
+      .prepare('SELECT * FROM trip_items WHERE id = ? AND trip_id = ?')
+      .get(Number(req.params.itemId), trip.id);
     if (!item) return res.status(404).json({ error: 'item nao encontrado' });
-    const product = hydrate(Number(req.body?.productId));
+    const product = await hydrate(Number(req.body?.productId));
     if (!product) return res.status(404).json({ error: 'produto nao encontrado' });
 
-    const retrato = snapshotOf(product.id);
+    const retrato = await snapshotOf(product.id);
     const expected =
       (trip.market ? retrato?.[trip.market] : null) ?? product.cheapest?.price ?? null;
 
-    db.prepare(
-      `UPDATE trip_items
-          SET product_id = ?, name = ?, image_url = ?, category = ?, unit = ?, expected = ?, price_snapshot = ?,
-              swapped_from = COALESCE(swapped_from, ?), picked = 0, unit_price = NULL, picked_qty = NULL,
-              picked_by = NULL, picked_at = NULL
-        WHERE id = ?`,
-    ).run(
-      product.id, product.name, product.imageUrl, product.category, item.unit, expected,
-      retrato ? JSON.stringify(retrato) : null, item.name, item.id,
-    );
+    await db
+      .prepare(
+        `UPDATE trip_items
+            SET product_id = ?, name = ?, image_url = ?, category = ?, unit = ?, expected = ?, price_snapshot = ?,
+                swapped_from = COALESCE(swapped_from, ?), picked = 0, unit_price = NULL, picked_qty = NULL,
+                picked_by = NULL, picked_at = NULL
+          WHERE id = ?`,
+      )
+      .run(
+        product.id, product.name, product.imageUrl, product.category, item.unit, expected,
+        retrato ? JSON.stringify(retrato) : null, item.name, item.id,
+      );
 
     publish(req.user.householdId, 'trip', { tripId: trip.id });
-    res.json({ trip: tripPayload(trip) });
+    res.json({ trip: await tripPayload(trip) });
   } catch (err) {
     next(err);
   }
 });
 
-tripsRouter.delete('/:id/items/:itemId', (req, res, next) => {
+tripsRouter.delete('/:id/items/:itemId', async (req, res, next) => {
   try {
-    const trip = assertTripInHousehold(Number(req.params.id), req.user.householdId);
-    db.prepare('DELETE FROM trip_items WHERE id = ? AND trip_id = ?').run(Number(req.params.itemId), trip.id);
+    const trip = await assertTripInHousehold(Number(req.params.id), req.user.householdId);
+    await db.prepare('DELETE FROM trip_items WHERE id = ? AND trip_id = ?').run(Number(req.params.itemId), trip.id);
     publish(req.user.householdId, 'trip', { tripId: trip.id });
-    res.json({ trip: tripPayload(trip) });
+    res.json({ trip: await tripPayload(trip) });
   } catch (err) {
     next(err);
   }
@@ -422,24 +460,33 @@ tripsRouter.delete('/:id/items/:itemId', (req, res, next) => {
  * que estava nelas agora esta comprado ou na lista nova. As listas rapidas
  * cadastradas ficam intactas -- foram feitas para repetir.
  */
-tripsRouter.post('/:id/finish', (req, res, next) => {
+tripsRouter.post('/:id/finish', async (req, res, next) => {
   try {
-    const trip = assertTripInHousehold(Number(req.params.id), req.user.householdId);
+    const trip = await assertTripInHousehold(Number(req.params.id), req.user.householdId);
     if (trip.status !== 'active') return res.status(409).json({ error: 'este carrinho ja foi fechado' });
 
     let leftoverId = null;
-    const finish = db.transaction(() => {
-      const items = db.prepare('SELECT * FROM trip_items WHERE trip_id = ?').all(trip.id);
+    const finish = db.transaction(async () => {
+      const items = await db.prepare('SELECT * FROM trip_items WHERE trip_id = ?').all(trip.id);
       const missing = items.filter((i) => !i.picked);
 
       for (const item of items) {
         // Guarda o preco corrigido a mao; o da lista ja veio do mercado e nao
         // e informacao nova para o historico.
         if (item.picked && item.unit_price != null) {
-          db.prepare(
-            `INSERT INTO price_history (product_id, match_key, name, market, unit_price, trip_id)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-          ).run(item.product_id, matchKey({ name: item.name }), item.name, trip.market, item.unit_price, trip.id);
+          await db
+            .prepare(
+              `INSERT INTO price_history (product_id, match_key, name, market, unit_price, trip_id)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              item.product_id,
+              await historyKeyFor({ productId: item.product_id, name: item.name }),
+              item.name,
+              trip.market,
+              item.unit_price,
+              trip.id,
+            );
         }
       }
 
@@ -447,10 +494,13 @@ tripsRouter.post('/:id/finish', (req, res, next) => {
         const quando = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
         const onde = trip.market ? MARKET_BY_KEY.get(trip.market)?.label || trip.market : null;
         const nome = onde ? `Faltou no ${onde} · ${quando}` : `Faltou · ${quando}`;
-        const info = db
-          .prepare("INSERT INTO lists (household_id, name, kind, emoji, reusable, created_by) VALUES (?, ?, 'quick', '🔁', 0, ?)")
-          .run(req.user.householdId, nome, req.user.id);
-        leftoverId = info.lastInsertRowid;
+        const nova = await db
+          .prepare(
+            `INSERT INTO lists (household_id, name, kind, emoji, reusable, created_by)
+             VALUES (?, ?, 'quick', '🔁', 0, ?) RETURNING id`,
+          )
+          .get(req.user.householdId, nome, req.user.id);
+        leftoverId = nova.id;
         const insert = db.prepare(
           `INSERT INTO list_items (list_id, product_id, name, qty, unit, category, image_url, note, position, added_by, price_snapshot, snapshot_at)
            SELECT ?, product_id, name, qty, unit, category, image_url, note, position, added_by, price_snapshot, snapshot_at
@@ -464,11 +514,11 @@ tripsRouter.post('/:id/finish', (req, res, next) => {
         );
         for (const [indice, item] of missing.entries()) {
           const origem = item.list_item_id
-            ? db.prepare('SELECT id FROM list_items WHERE id = ?').get(item.list_item_id)
+            ? await db.prepare('SELECT id FROM list_items WHERE id = ?').get(item.list_item_id)
             : null;
-          if (origem) insert.run(leftoverId, origem.id);
+          if (origem) await insert.run(leftoverId, origem.id);
           else
-            insertNovo.run(
+            await insertNovo.run(
               leftoverId, item.product_id, item.name, item.qty, item.unit, item.category, item.image_url, item.note, indice,
               req.user.id,
             );
@@ -480,8 +530,9 @@ tripsRouter.post('/:id/finish', (req, res, next) => {
       // lista nova, entao sai da origem; o que foi anotado na lista DEPOIS de
       // o carrinho ser montado (o outro mexeu na lista enquanto voce estava no
       // mercado) nunca esteve aqui e tem de continuar la.
-      const unicas = new Set(sourceLists(trip.id).filter((l) => l.id && !l.reusable).map((l) => l.id));
-      const origens = db
+      const origensDoCarrinho = await sourceLists(trip.id);
+      const unicas = new Set(origensDoCarrinho.filter((l) => l.id && !l.reusable).map((l) => l.id));
+      const origens = await db
         .prepare(
           `SELECT s.list_item_id, s.list_id
              FROM trip_item_sources s
@@ -491,25 +542,30 @@ tripsRouter.post('/:id/finish', (req, res, next) => {
         .all(trip.id);
       for (const origem of origens) {
         if (!unicas.has(origem.list_id)) continue;
-        db.prepare('DELETE FROM list_items WHERE id = ?').run(origem.list_item_id);
+        await db.prepare('DELETE FROM list_items WHERE id = ?').run(origem.list_item_id);
       }
 
       // A lista geral e permanente e fica com o que sobrou dela. Uma lista de
       // sobra so desaparece se tiver zerado -- se ainda tem item, ela continua
       // valendo.
-      for (const source of sourceLists(trip.id)) {
+      for (const source of origensDoCarrinho) {
         if (!source.id || source.reusable) continue;
-        const restam = db.prepare('SELECT COUNT(*) AS n FROM list_items WHERE list_id = ?').get(source.id).n;
-        if (source.kind !== 'general' && restam === 0) db.prepare('DELETE FROM lists WHERE id = ?').run(source.id);
-        else db.prepare("UPDATE lists SET updated_at = datetime('now') WHERE id = ?").run(source.id);
+        const { n: restam } = await db
+          .prepare('SELECT COUNT(*) AS n FROM list_items WHERE list_id = ?')
+          .get(source.id);
+        if (source.kind !== 'general' && restam === 0) {
+          await db.prepare('DELETE FROM lists WHERE id = ?').run(source.id);
+        } else {
+          await db.prepare("UPDATE lists SET updated_at = datetime('now') WHERE id = ?").run(source.id);
+        }
       }
 
-      db.prepare("UPDATE trips SET status = 'done', finished_at = datetime('now') WHERE id = ?").run(trip.id);
+      await db.prepare("UPDATE trips SET status = 'done', finished_at = datetime('now') WHERE id = ?").run(trip.id);
     });
-    finish();
+    await finish();
 
-    const updated = db.prepare('SELECT * FROM trips WHERE id = ?').get(trip.id);
-    const payload = tripPayload(updated);
+    const updated = await db.prepare('SELECT * FROM trips WHERE id = ?').get(trip.id);
+    const payload = await tripPayload(updated);
     publish(req.user.householdId, 'trip', { tripId: trip.id, finished: true });
     publish(req.user.householdId, 'general');
     publish(req.user.householdId, 'lists');
@@ -519,8 +575,8 @@ tripsRouter.post('/:id/finish', (req, res, next) => {
       leftover: leftoverId
         ? {
             id: leftoverId,
-            name: db.prepare('SELECT name FROM lists WHERE id = ?').get(leftoverId).name,
-            itemCount: db.prepare('SELECT COUNT(*) AS n FROM list_items WHERE list_id = ?').get(leftoverId).n,
+            name: (await db.prepare('SELECT name FROM lists WHERE id = ?').get(leftoverId)).name,
+            itemCount: (await db.prepare('SELECT COUNT(*) AS n FROM list_items WHERE list_id = ?').get(leftoverId)).n,
           }
         : null,
     });
@@ -529,10 +585,10 @@ tripsRouter.post('/:id/finish', (req, res, next) => {
   }
 });
 
-tripsRouter.post('/:id/cancel', (req, res, next) => {
+tripsRouter.post('/:id/cancel', async (req, res, next) => {
   try {
-    const trip = assertTripInHousehold(Number(req.params.id), req.user.householdId);
-    db.prepare("UPDATE trips SET status = 'canceled', finished_at = datetime('now') WHERE id = ?").run(trip.id);
+    const trip = await assertTripInHousehold(Number(req.params.id), req.user.householdId);
+    await db.prepare("UPDATE trips SET status = 'canceled', finished_at = datetime('now') WHERE id = ?").run(trip.id);
     publish(req.user.householdId, 'trip', { tripId: trip.id, finished: true });
     res.json({ ok: true });
   } catch (err) {
