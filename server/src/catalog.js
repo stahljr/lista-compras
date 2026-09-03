@@ -319,30 +319,53 @@ export async function searchLocal(term, { limit = 30 } = {}) {
   return hidratarVarios(rows.map((r) => r.id));
 }
 
-export function categoryCounts() {
+/**
+ * Quantos produtos por corredor. Com `mercados`, conta so o que aquelas redes
+ * tem -- e o que faz o numero na etiqueta do corredor dizer a verdade quando
+ * alguem escolheu onde vai comprar.
+ */
+export function categoryCounts(mercados = []) {
+  const filtro = listaDeMercados(mercados);
   return db
     .prepare(
       `SELECT p.category AS category, COUNT(*) AS total
          FROM products p
          JOIN offers o ON o.product_id = p.id AND o.price > 0
+              ${filtro.clausula}
         GROUP BY p.category`,
     )
-    .all();
+    .all(...filtro.args);
 }
 
-export async function productsByCategory(category, { limit = 60, offset = 0 } = {}) {
+export async function productsByCategory(category, { limit = 60, offset = 0, mercados = [] } = {}) {
+  const filtro = listaDeMercados(mercados);
   const rows = await db
     .prepare(
       `SELECT p.id
          FROM products p
          JOIN offers o ON o.product_id = p.id AND o.price > 0
+              ${filtro.clausula}
         WHERE p.category = ?
         GROUP BY p.id
         ORDER BY COUNT(DISTINCT o.market) DESC, p.name
         LIMIT ? OFFSET ?`,
     )
-    .all(category, limit, offset);
+    .all(...filtro.args, category, limit, offset);
   return hidratarVarios(rows.map((r) => r.id));
+}
+
+/**
+ * O recorte por mercado, como pedaco de SQL. Entra no ON do JOIN e nao no
+ * WHERE de proposito: assim o produto so conta se a *oferta* for de uma das
+ * redes escolhidas -- no WHERE, um produto do Condor entraria por ter
+ * qualquer oferta e depois seria contado errado.
+ */
+function listaDeMercados(mercados) {
+  const chaves = (Array.isArray(mercados) ? mercados : String(mercados || '').split(','))
+    .map((m) => String(m).trim())
+    .filter((m) => MARKET_BY_KEY.has(m));
+  if (!chaves.length) return { clausula: '', args: [] };
+  return { clausula: `AND o.market IN (${chaves.map(() => '?').join(', ')})`, args: chaves };
 }
 
 /**
@@ -444,15 +467,15 @@ async function coverOf(category, products) {
   return { url: products.find((p) => p.imageUrl)?.imageUrl || null, escolhida: false };
 }
 
-export async function shelves({ perCategory = 10 } = {}) {
-  const counts = new Map((await categoryCounts()).map((c) => [c.category, Number(c.total)]));
+export async function shelves({ perCategory = 10, mercados = [] } = {}) {
+  const counts = new Map((await categoryCounts(mercados)).map((c) => [c.category, Number(c.total)]));
   // Todos os corredores aparecem, inclusive os que ainda nao tem produto: um
   // mercado tem o corredor de higiene mesmo quando a prateleira esta por
   // encher, e esconde-lo faz o app parecer quebrado. Vazio, ele se enche na
   // primeira vez que alguem entra.
   const corredores = [];
   for (const c of CATEGORIES.filter((c) => c.key !== 'outros' || counts.get(c.key))) {
-    const products = counts.get(c.key) ? await productsByCategory(c.key, { limit: perCategory }) : [];
+    const products = counts.get(c.key) ? await productsByCategory(c.key, { limit: perCategory, mercados }) : [];
     const cover = await coverOf(c.key, products);
     corredores.push({
       key: c.key,
@@ -637,8 +660,19 @@ export async function favoriteIds(householdId) {
 }
 
 /** Os favoritos hidratados, na ordem em que foram marcados. */
-export async function favorites(householdId, { limit = 40 } = {}) {
-  return hidratarVarios((await favoriteIds(householdId)).slice(0, limit));
+/**
+ * Os favoritos da casa, com os mesmos filtros das outras prateleiras. O
+ * mercado e o que mais importa aqui: "do que eu sempre compro, o que este
+ * mercado tem?" e a pergunta que se faz na porta da loja.
+ */
+export async function favorites(householdId, { limit = 40, filtros = {} } = {}) {
+  const todos = await hidratarVarios(await favoriteIds(householdId));
+  const rows = todos.map(linhaDeProduto);
+  const ctx = contextoDeFiltros();
+  const facets = facetar(rows, filtros, DIMENSOES_BUSCA, ctx);
+  const escolhidos = new Set(filtrar(rows, filtros, DIMENSOES_BUSCA).map((r) => r.id));
+  const products = todos.filter((p) => escolhidos.has(p.id)).slice(0, limit);
+  return { products, total: escolhidos.size, facets };
 }
 
 /**

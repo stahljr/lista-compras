@@ -80,7 +80,7 @@ function CorredorTile({ c, ativo, onClick }: { c: Corredor; ativo: boolean; onCl
  * quatro mercados de uma vez.
  */
 export default function Market() {
-  const { setGeneral, general, trip, refreshTrip, notify, favoritos } = useStore();
+  const { setGeneral, general, trip, refreshTrip, notify, favoritos, markets } = useStore();
   const navigate = useNavigate();
   const [term, setTerm] = useState('');
   const [corredores, setCorredores] = useState<Corredor[]>([]);
@@ -92,6 +92,13 @@ export default function Market() {
   const [totalCorredor, setTotalCorredor] = useState(0);
   const [facetas, setFacetas] = useState<Facetas>({});
   const [filtros, setFiltros] = useState<Filtros>(SEM_FILTRO);
+  /**
+   * Em que mercados estou comprando. Fica fora de `filtros` e `filtrosBusca`
+   * de proposito: "hoje eu vou no Angeloni" nao e um filtro de prateleira que
+   * se troca ao abrir outro corredor -- vale para a tela toda, e por isso e
+   * um estado so, que a faixa de cima mostra e as duas prateleiras herdam.
+   */
+  const [mercados, setMercados] = useState<string[]>([]);
   const [facetasBusca, setFacetasBusca] = useState<Facetas>({});
   const [filtrosBusca, setFiltrosBusca] = useState<Filtros>(SEM_FILTRO);
   const [totalBusca, setTotalBusca] = useState(0);
@@ -104,6 +111,13 @@ export default function Market() {
   const [aberto2, setAberto2] = useState<Product | null>(null);
   const debounce = useRef<number | undefined>(undefined);
 
+  // O mercado escolhido vale para as duas prateleiras, e por isso e costurado
+  // aqui na entrada e desfeito na saida (`escolherFiltros`): as telas de baixo
+  // continuam recebendo um `Filtros` normal, sem saber desse arranjo.
+  const comMercado = (f: Filtros): Filtros => ({ ...f, market: mercados.join(',') || null });
+  const filtrosCorredor = comMercado(filtros);
+  const filtrosDaBusca = comMercado(filtrosBusca);
+
   const buscando = term.trim().length >= 2;
   const naLista = general?.items.length ?? 0;
   const destino = trip && trip.status === 'active' ? 'carrinho' : 'lista';
@@ -111,10 +125,12 @@ export default function Market() {
   const recarregarCorredores = useCallback(
     () =>
       api
-        .get<{ shelves: Corredor[] }>('/catalog/shelves?perCategory=12')
+        .get<{ shelves: Corredor[] }>(
+          `/catalog/shelves?perCategory=12${mercados.length ? `&market=${mercados.join(',')}` : ''}`,
+        )
         .then((d) => setCorredores(d.shelves))
         .catch(() => {}),
-    [],
+    [mercados],
   );
 
   useEffect(() => {
@@ -215,9 +231,11 @@ export default function Market() {
 
   useEffect(() => {
     window.clearTimeout(debounce.current);
-    debounce.current = window.setTimeout(() => void buscar(term, filtrosBusca), 450);
+    debounce.current = window.setTimeout(() => void buscar(term, comMercado(filtrosBusca)), 450);
     return () => window.clearTimeout(debounce.current);
-  }, [term, filtrosBusca, buscar]);
+    // `comMercado` e recriado a cada render; o que importa e o que ele carrega.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [term, filtrosBusca, mercados, buscar]);
 
   // Palavra nova comeca sem filtro: a marca da busca anterior nao vale para a
   // proxima, e deixa-la ligada esconderia o resultado sem explicacao.
@@ -256,13 +274,33 @@ export default function Market() {
     setTerm('');
     setDoCorredor([]);
     setFiltros(SEM_FILTRO);
-    await carregarCorredor(key, SEM_FILTRO);
+    // Abrir corredor solta tipo, marca e tamanho -- mas nao o mercado: quem
+    // escolheu o Angeloni na faixa quer o Angeloni em todo corredor que abrir.
+    await carregarCorredor(key, comMercado(SEM_FILTRO));
     void recarregarCorredores();
   }
 
-  function filtrar(proximo: Filtros) {
-    setFiltros(proximo);
-    if (aberto) void carregarCorredor(aberto, proximo);
+  /**
+   * Recebe os filtros da prateleira ja com o mercado dentro, guarda o mercado
+   * no estado de cima e o resto no da prateleira. E o desfazer do `comMercado`.
+   */
+  function escolherFiltros(proximo: Filtros, alvo: 'corredor' | 'busca') {
+    const { market, ...resto } = proximo;
+    const proximosMercados = market ? String(market).split(',').filter(Boolean) : [];
+    setMercados(proximosMercados);
+    if (alvo === 'corredor') {
+      setFiltros(resto);
+      if (aberto) void carregarCorredor(aberto, { ...resto, market: market || null });
+    } else {
+      setFiltrosBusca(resto);
+    }
+  }
+
+  /** Liga ou desliga um mercado na faixa de cima. */
+  function alternarMercado(chave: string) {
+    const proximos = mercados.includes(chave) ? mercados.filter((m) => m !== chave) : [...mercados, chave];
+    setMercados(proximos);
+    if (aberto) void carregarCorredor(aberto, { ...filtros, market: proximos.join(',') || null });
   }
 
   /** Com carrinho aberto o item vai direto pra ele; fora disso, para a lista. */
@@ -302,15 +340,26 @@ export default function Market() {
   // Corredor nenhum com produto: banco novo, catalogo por encher.
   const vazio = !carregandoCorredores && corredores.length > 0 && corredores.every((c) => !c.total);
 
+  const nomeDoMercado = (chave: string) => markets.find((m) => m.key === chave)?.label ?? chave;
+  const legendaDoTopo =
+    destino === 'carrinho'
+      ? 'adicionando no carrinho em andamento'
+      : mercados.length === 1
+        ? `só ${nomeDoMercado(mercados[0])}`
+        : mercados.length > 1
+          ? mercados.map(nomeDoMercado).join(' e ')
+          : undefined;
+
   const grade = 'grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:gap-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6';
   const corredorAberto = corredores.find((c) => c.key === aberto);
 
   return (
     <>
-      <Topbar
-        title="Mercado"
-        subtitle={destino === 'carrinho' ? 'adicionando no carrinho em andamento' : 'preço nos quatro mercados'}
-      >
+      {/* O subtitulo dizia "preço nos quatro mercados" com a faixa logo abaixo
+          dizendo a mesma coisa em letra maior -- duas vezes o mesmo recado, e
+          um cabecalho que parecia vazio. Agora ele so fala quando tem algo
+          proprio a dizer: o carrinho aberto, ou em que mercado se esta. */}
+      <Topbar title="Mercado" subtitle={legendaDoTopo}>
         {naLista > 0 && destino === 'lista' && (
           <Button variant="outline" size="sm" onClick={() => navigate('/lista')}>
             <ClipboardList />
@@ -322,7 +371,7 @@ export default function Market() {
       <Page>
         {/* A faixa de abertura aparece so na tela cheia do mercado: com busca
             aberta ou corredor escolhido, o espaco e do resultado. */}
-        {!buscando && !aberto && <Hero />}
+        {!buscando && !aberto && <Hero escolhidos={mercados} onAlternar={alternarMercado} />}
 
         <div className="relative">
           <Search className="text-muted-foreground/70 pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2" />
@@ -415,14 +464,14 @@ export default function Market() {
             </SectionTitle>
             <BarraDeFiltros
               facetas={facetasBusca}
-              filtros={filtrosBusca}
+              filtros={filtrosDaBusca}
               total={totalBusca}
               dimensoes={['category', 'brand', 'size', 'market']}
-              onChange={setFiltrosBusca}
+              onChange={(f) => escolherFiltros(f, 'busca')}
             />
             {!resultados.length && !carregando ? (
               <EmptyState icon={<Search />} title="Nada encontrado">
-                {temFiltro(filtrosBusca)
+                {temFiltro(filtrosDaBusca)
                   ? 'Nada com esses filtros. Solte um deles, ou toque em Limpar.'
                   : 'Tente escrever de outro jeito, ou anote à mão na lista.'}
               </EmptyState>
@@ -441,7 +490,7 @@ export default function Market() {
             <SectionTitle
               action={
                 <span className="text-muted-foreground text-sm">
-                  {temFiltro(filtros)
+                  {temFiltro(filtrosCorredor)
                     ? `${totalCorredor} de ${corredorAberto?.total ?? totalCorredor}`
                     : totalCorredor || doCorredor.length}
                 </span>
@@ -451,10 +500,10 @@ export default function Market() {
             </SectionTitle>
             <BarraDeFiltros
               facetas={facetas}
-              filtros={filtros}
+              filtros={filtrosCorredor}
               total={totalCorredor}
               dimensoes={['sub', 'brand', 'size', 'market']}
-              onChange={filtrar}
+              onChange={(f) => escolherFiltros(f, 'corredor')}
             />
             {carregando && !doCorredor.length ? (
               <>

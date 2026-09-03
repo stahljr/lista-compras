@@ -1,39 +1,73 @@
+import { Check } from 'lucide-react';
 import { useStore } from '@/lib/store';
+import { cn } from '@/lib/utils';
 
 /**
  * A faixa de abertura do Mercado.
  *
  * O topo da tela era so titulo e subtitulo, e sobrava um vazio esquisito antes
- * da busca. Aqui entra a marca, o que o app faz numa linha e os quatro
- * mercados na cor de cada um -- que e a informacao que justifica o app existir.
+ * da busca. Aqui entra o que o app faz numa linha e os quatro mercados na cor
+ * de cada um -- que e a informacao que justifica o app existir.
+ *
+ * Os mercados nao sao enfeite: tocar num deles recorta a tela inteira para
+ * aquela rede, e da para marcar dois ("hoje eu vou no Angeloni e no Festval").
+ * Ficar aqui, escrito e colorido, e o que impede o filtro de ser um estado
+ * escondido -- da uma olhada e ve onde esta comprando.
  *
  * A ilustracao e um SVG desenhado aqui, e nao uma foto: carrega junto do
  * bundle, nao depende de rede (a mesma tela abre no mercado com sinal ruim) e
  * acompanha a paleta sem precisar de retoque quando a cor muda.
  */
-export function Hero() {
+export function Hero({
+  escolhidos,
+  onAlternar,
+}: {
+  escolhidos: string[];
+  onAlternar: (chave: string) => void;
+}) {
   const { markets } = useStore();
+  const filtrando = escolhidos.length > 0;
 
   return (
     <div className="from-primary relative mb-4 overflow-hidden rounded-2xl bg-gradient-to-br to-blue-800 px-4 py-4 text-white shadow-sm md:px-6 md:py-5">
       <div className="relative z-10 max-w-[62%] md:max-w-[70%]">
-        <p className="text-[11px] font-bold tracking-[0.18em] uppercase opacity-70">NaCesta</p>
-        <h2 className="mt-0.5 text-[19px] leading-tight font-extrabold tracking-tight md:text-2xl">
+        <h2 className="text-[19px] leading-tight font-extrabold tracking-tight md:text-2xl">
           Quatro mercados, uma lista
         </h2>
         <p className="mt-1 text-[12.5px] leading-snug opacity-85 md:text-sm">
-          O preço de cada rede, lado a lado — e a conta de onde vale a pena fazer a compra.
+          {filtrando
+            ? 'Mostrando só o que essas redes têm. Toque para soltar.'
+            : 'O preço de cada rede, lado a lado — toque num mercado para ver só o dele.'}
         </p>
         <div className="mt-2.5 flex flex-wrap gap-1.5">
-          {markets.map((m) => (
-            <span
-              key={m.key}
-              className="flex items-center gap-1.5 rounded-full bg-white/15 py-0.5 pr-2 pl-1.5 text-[11px] font-semibold backdrop-blur-sm"
-            >
-              <span className="size-2 rounded-full" style={{ background: m.color }} />
-              {m.label}
-            </span>
-          ))}
+          {markets.map((m) => {
+            const ligado = escolhidos.includes(m.key);
+            return (
+              <button
+                key={m.key}
+                type="button"
+                aria-pressed={ligado}
+                aria-label={`${ligado ? 'Tirar' : 'Ver só'} ${m.label}`}
+                onClick={() => onAlternar(m.key)}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full py-1 pr-2.5 pl-2 text-[11px] font-semibold backdrop-blur-sm transition-colors active:scale-[0.97]',
+                  ligado
+                    ? 'bg-white text-blue-900 shadow-sm'
+                    : 'bg-white/15 hover:bg-white/25',
+                  // Com um mercado ligado, os outros recuam: o que esta valendo
+                  // tem de ser obvio de longe.
+                  filtrando && !ligado && 'opacity-60',
+                )}
+              >
+                {ligado ? (
+                  <Check className="size-3" strokeWidth={3} />
+                ) : (
+                  <span className="size-2 rounded-full" style={{ background: m.color }} />
+                )}
+                {m.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 

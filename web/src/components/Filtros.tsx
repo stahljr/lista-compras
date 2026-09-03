@@ -15,6 +15,21 @@ export type Filtros = Partial<Record<Dimensao, string | null>>;
 
 export const SEM_FILTRO: Filtros = {};
 export const temFiltro = (f: Filtros) => Object.values(f).some(Boolean);
+
+/**
+ * Dimensoes que aceitam mais de uma escolha ao mesmo tempo. Sao guardadas
+ * como uma lista separada por virgula ("angeloni,festval") -- o servidor le
+ * assim, e isso mantem o filtro sendo um valor de texto so, que cabe na URL
+ * e no estado sem virar um caso especial em cada tela.
+ */
+const MULTIPLAS: Dimensao[] = ['market'];
+export const valores = (v: string | null | undefined) => (v ? String(v).split(',').filter(Boolean) : []);
+/** Liga ou desliga um valor numa dimensao multipla, preservando os outros. */
+export const alternar = (atual: string | null | undefined, chave: string) => {
+  const lista = valores(atual);
+  const proxima = lista.includes(chave) ? lista.filter((v) => v !== chave) : [...lista, chave];
+  return proxima.length ? proxima.join(',') : null;
+};
 export const paraBusca = (f: Filtros) =>
   Object.entries(f)
     .filter(([, v]) => v)
@@ -72,6 +87,12 @@ export function Filtros({
     facetas[dim]?.find((f) => f.key === chave)?.label ?? chave;
 
   const escolher = (dim: Dimensao, chave: string | null) => {
+    // Dimensao multipla soma em vez de trocar, e a folha fica aberta: quem
+    // quer dois mercados escolhe os dois sem reabrir nada.
+    if (MULTIPLAS.includes(dim) && chave) {
+      onChange({ ...filtros, [dim]: alternar(filtros[dim], chave) });
+      return;
+    }
     // Trocar o tipo (ou o corredor) solta marca e tamanho: eram do anterior.
     if ((dim === 'sub' || dim === 'category') && chave !== filtros[dim]) {
       onChange({ ...filtros, [dim]: chave, brand: null, size: null });
@@ -80,6 +101,13 @@ export function Filtros({
     }
     setAberta(null);
     setProcura('');
+  };
+
+  /** O que escrever no botao da dimensao: "Angeloni" ou "2 mercados". */
+  const resumo = (dim: Dimensao, escolhido: string) => {
+    const lista = valores(escolhido);
+    if (lista.length <= 1) return rotuloDe(dim, escolhido);
+    return `${lista.length} ${NOME[dim].toLowerCase()}s`;
   };
 
   const corDoMercado = (chave: string) => markets.find((m) => m.key === chave)?.color;
@@ -100,10 +128,10 @@ export function Filtros({
                 escolhido ? 'border-primary bg-primary text-primary-foreground' : 'bg-card hover:bg-muted',
               )}
             >
-              {dim === 'market' && escolhido && (
+              {dim === 'market' && escolhido && valores(escolhido).length === 1 && (
                 <span className="size-2 rounded-full" style={{ background: corDoMercado(escolhido) }} />
               )}
-              {escolhido ? rotuloDe(dim, escolhido) : NOME[dim]}
+              {escolhido ? resumo(dim, escolhido) : NOME[dim]}
               {escolhido ? (
                 <span
                   role="button"
@@ -140,7 +168,11 @@ export function Filtros({
       {aberta && (
         <Sheet
           title={NOME[aberta]}
-          subtitle={`${facetas[aberta]?.length ?? 0} opções nesta prateleira`}
+          subtitle={
+            MULTIPLAS.includes(aberta)
+              ? 'Marque quantos quiser — vale qualquer um deles'
+              : `${facetas[aberta]?.length ?? 0} opções nesta prateleira`
+          }
           onClose={() => {
             setAberta(null);
             setProcura('');
@@ -178,7 +210,7 @@ export function Filtros({
                 <Badge variant="secondary" className="shrink-0">
                   {o.count}
                 </Badge>
-                {filtros[aberta] === o.key && <Check className="text-primary size-4 shrink-0" />}
+                {valores(filtros[aberta]).includes(o.key) && <Check className="text-primary size-4 shrink-0" />}
               </Row>
             ))}
             {!opcoes.length && <p className="text-muted-foreground px-2 py-4 text-sm">Nada com esse nome.</p>}

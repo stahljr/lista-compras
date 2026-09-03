@@ -312,16 +312,29 @@ function ordemSub(category, key) {
   return i < 0 ? 99 : i;
 }
 
-/** O produto atende ao filtro daquela dimensao? */
+/**
+ * O produto atende ao filtro daquela dimensao?
+ *
+ * O escolhido pode ser mais de um, separados por virgula ("angeloni,festval"),
+ * e ai vale qualquer um deles. Isso existe pelo mercado: "hoje eu vou no
+ * Angeloni e no Festval" e uma pergunta legitima, e sem o "ou" ela nao cabe
+ * num filtro de um valor. Como a regra mora aqui e todas as dimensoes passam
+ * por ela, marca e tamanho ganham o mesmo poder de graca.
+ */
 function atende(row, dim, escolhido) {
   if (!escolhido) return true;
+  const querido = String(escolhido)
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+  if (!querido.length) return true;
   const valores = DIMENSOES[dim].valores(row);
   if (dim === 'brand') {
     // Marca casa tambem pelo nome: produto que veio sem marca preenchida, mas
     // com "ypê" no nome, e Ypê para quem esta filtrando.
-    return valores.includes(escolhido) || fold(row.name).includes(escolhido);
+    return querido.some((q) => valores.includes(q) || fold(row.name).includes(q));
   }
-  return valores.includes(escolhido);
+  return querido.some((q) => valores.includes(q));
 }
 
 /**

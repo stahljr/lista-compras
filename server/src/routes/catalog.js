@@ -95,8 +95,13 @@ catalogRouter.get('/warmup', async (_req, res, next) => {
 catalogRouter.get('/favorites', async (req, res, next) => {
   try {
     if (req.query.ids === '1') return res.json({ ids: await favoriteIds(req.user.householdId) });
-    const produtos = await favorites(req.user.householdId, { limit: Math.min(Number(req.query.limit) || 40, 60) });
-    res.json({ products: produtos, ids: produtos.map((p) => p.id) });
+    const filtros = {};
+    for (const dim of ['category', 'brand', 'size', 'market']) if (req.query[dim]) filtros[dim] = String(req.query[dim]);
+    const { products, total, facets } = await favorites(req.user.householdId, {
+      limit: Math.min(Number(req.query.limit) || 40, 60),
+      filtros,
+    });
+    res.json({ products, total, facets, ids: products.map((p) => p.id) });
   } catch (err) {
     next(err);
   }
@@ -123,7 +128,14 @@ catalogRouter.get('/categories', async (_req, res) => {
 /** Home no estilo mercado: as categorias com uma amostra de cada. */
 catalogRouter.get('/shelves', async (req, res, next) => {
   try {
-    res.json({ shelves: await shelves({ perCategory: Math.min(Number(req.query.perCategory) || 10, 20) }) });
+    res.json({
+      shelves: await shelves({
+        perCategory: Math.min(Number(req.query.perCategory) || 10, 20),
+        // "Hoje eu vou no Angeloni": os corredores e as contagens passam a
+        // falar so daquelas redes. Aceita mais de uma, separada por virgula.
+        mercados: String(req.query.market || '').split(',').filter(Boolean),
+      }),
+    });
   } catch (err) {
     next(err);
   }
