@@ -1,10 +1,10 @@
 import { Minus, Plus, Trash2 } from 'lucide-react';
 import { quantity } from '@/lib/format';
-import { useStore } from '@/lib/store';
 import { roundQty, stepOf } from '@/lib/unit';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Row, RowBody, RowMeta, RowName } from '@/components/Layout';
+import { SeletorDeMercado } from '@/components/SeletorDeMercado';
 import { Thumb } from '@/components/Thumb';
 import type { ListItem } from '@/lib/types';
 
@@ -23,8 +23,6 @@ export function ListItemRow({
   onMarket?: (market: string | null) => void;
   showWho?: boolean;
 }) {
-  const { markets } = useStore();
-  const escolhido = markets.find((m) => m.key === item.market);
   // Item vendido a peso anda de meio em meio quilo; o resto, de um em um.
   const passo = stepOf(item.unit);
 
@@ -35,20 +33,12 @@ export function ListItemRow({
         <RowName>{item.name}</RowName>
         <RowMeta>
           {onMarket && (
-            <select
-              aria-label={`Mercado de ${item.name}`}
-              value={item.market ?? ''}
-              onChange={(e) => onMarket(e.target.value || null)}
-              className="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-              style={escolhido ? { background: escolhido.color, color: '#fff', borderColor: 'transparent' } : undefined}
-            >
-              <option value="">onde for mais barato</option>
-              {markets.map((m) => (
-                <option key={m.key} value={m.key}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
+            <SeletorDeMercado
+              valor={item.market}
+              precos={item.priceSnapshot}
+              titulo={item.name}
+              onChange={onMarket}
+            />
           )}
           {showWho && item.addedBy && (
             <Badge variant="outline" style={{ borderColor: item.addedBy.color, color: item.addedBy.color }}>

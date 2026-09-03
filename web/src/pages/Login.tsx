@@ -34,8 +34,10 @@ export default function Login() {
     <div className="mx-auto w-full max-w-[26rem] px-4 pt-10 pb-16">
       <div className="mb-6 text-center">
         <img src="/icone-192.png" alt="" width={64} height={64} className="mx-auto rounded-2xl shadow-sm" />
-        <h1 className="mt-3.5 text-[22px] leading-tight font-bold tracking-tight">Nossa lista de compras</h1>
-        <p className="text-muted-foreground mt-1 text-sm">Angeloni, Festval, Muffato e Condor num só lugar</p>
+        <h1 className="mt-3.5 text-[26px] leading-tight font-extrabold tracking-tight">NaCesta</h1>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Quatro mercados, uma lista: Angeloni, Festval, Muffato e Condor lado a lado.
+        </p>
       </div>
 
       <Card className="gap-0 p-5">

@@ -9,7 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Banner, EmptyState, Page, Row, RowBody, RowMeta, RowName, SectionTitle, Topbar } from '@/components/Layout';
-import type { Comparison, Trip } from '@/lib/types';
+import { SeletorDeMercado } from '@/components/SeletorDeMercado';
+import { Thumb } from '@/components/Thumb';
+import type { Comparison, ShoppingList, Trip } from '@/lib/types';
 
 /** Rotulo pequeno em caixa alta, do jeito dos outros cartoes do app. */
 function Etiqueta({ children }: { children: React.ReactNode }) {
@@ -41,6 +43,19 @@ export default function Compare() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * Fixa o mercado de um item aqui mesmo: e nesta tela que se ve o preco de
+   * cada loja, e portanto onde a decisao acontece.
+   */
+  async function fixarMercado(itemId: number, market: string | null) {
+    try {
+      await api.patch<{ list: ShoppingList }>(`/lists/${target}/items/${itemId}`, { market });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'não deu para escolher o mercado');
+    }
+  }
 
   async function startAt(market: string) {
     const { trip } = await api.post<{ trip: Trip }>('/trips', {
@@ -200,6 +215,8 @@ export default function Compare() {
             )}
 
             <SectionTitle>Custo em cada mercado</SectionTitle>
+            {/* Preco nao e o unico motivo: as vezes se prefere um mercado e
+                pronto. Entao qualquer um dos quatro pode comecar a compra. */}
             <Card className="overflow-hidden py-0">
               {data.markets.map((m) => (
                 <Row key={m.key}>
@@ -213,11 +230,53 @@ export default function Compare() {
                         <Badge variant="secondary">faltam {m.missingCount}</Badge>
                       )}
                       <span className="text-muted-foreground/70">{m.covered} itens</span>
+                      <strong className="text-foreground tabular-nums">{money(m.total)}</strong>
                     </RowMeta>
                   </RowBody>
-                  <strong className="shrink-0 text-[15px] font-bold tabular-nums">{money(m.total)}</strong>
+                  <Button
+                    variant={best && m.key === best.key ? 'default' : 'outline'}
+                    size="sm"
+                    className="shrink-0"
+                    disabled={!m.covered}
+                    onClick={() => void startAt(m.key)}
+                  >
+                    Começar aqui
+                  </Button>
                 </Row>
               ))}
+            </Card>
+
+            <SectionTitle action={<span className="text-muted-foreground text-sm">{data.priced.length}</span>}>
+              Onde comprar cada item
+            </SectionTitle>
+            <p className="text-muted-foreground mb-2 px-1 text-xs">
+              Sem escolha, vale o mais barato. Fixar um mercado num item é uma decisão — ele passa a contar por lá, e
+              no carrinho aparece com a etiqueta da loja.
+            </p>
+            <Card className="overflow-hidden py-0">
+              {data.priced.map((item) => {
+                const barato = Math.min(...Object.values(item.prices));
+                const lojaBarata = data.markets.find((m) => item.prices[m.key] === barato);
+                return (
+                  <Row key={item.id}>
+                    <Thumb src={item.imageUrl} category={item.category} alt={item.name} />
+                    <RowBody>
+                      <RowName>{item.name}</RowName>
+                      <RowMeta>
+                        {item.qty !== 1 && <span>{quantity(item.qty, item.unit)}</span>}
+                        <span className="tabular-nums">{money(barato)}</span>
+                        {lojaBarata && <span className="text-muted-foreground/70">{lojaBarata.label}</span>}
+                      </RowMeta>
+                    </RowBody>
+                    <SeletorDeMercado
+                      valor={item.market ?? null}
+                      precos={item.prices}
+                      titulo={item.name}
+                      onChange={(market) => void fixarMercado(item.id, market)}
+                    />
+                  </Row>
+                );
+              })}
             </Card>
 
             {data.unpriced.length > 0 && (

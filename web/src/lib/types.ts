@@ -151,6 +151,8 @@ export type PricedItem = {
   qty: number;
   unit: string;
   category: string;
+  /** Mercado fixado para este item, quando houver. */
+  market?: string | null;
   productId: number;
   imageUrl: string | null;
   prices: Record<string, number>;

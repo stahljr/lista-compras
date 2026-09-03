@@ -15,9 +15,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icone-192.png', 'icone-512.png', 'icone-apple.png'],
       manifest: {
-        name: 'Lista de Compras',
-        short_name: 'Lista',
-        description: 'Nossa lista de compras, com preços de Angeloni, Festval, Muffato e Condor',
+        name: 'NaCesta — quatro mercados, uma lista',
+        short_name: 'NaCesta',
+        description: 'A lista de compras da casa, com o preco do Angeloni, Festval, Muffato e Condor lado a lado.',
         lang: 'pt-BR',
         theme_color: '#1d4ed8',
         background_color: '#f4f6fb',

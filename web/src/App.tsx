@@ -66,7 +66,7 @@ export default function App() {
       <nav className="bg-card/95 fixed inset-x-0 bottom-0 z-40 flex border-t pb-[env(safe-area-inset-bottom)] backdrop-blur md:inset-y-0 md:right-auto md:w-56 md:flex-col md:justify-start md:gap-0.5 md:border-t-0 md:border-r md:p-2.5 md:pt-4.5 md:pb-2.5">
         <div className="hidden items-center gap-2.5 px-3 pb-4 md:flex">
           <img src="/icone-192.png" alt="" width={26} height={26} className="rounded-md" />
-          <span className="text-sm font-bold tracking-tight">Lista de Compras</span>
+          <span className="text-sm font-bold tracking-tight">NaCesta</span>
         </div>
 
         {abas.map(({ to, label, icon: Icon, badge, end }) => (

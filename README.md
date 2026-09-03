@@ -1,8 +1,12 @@
-# Lista de Compras
+# NaCesta
 
-Nossa lista de compras do mercado, compartilhada: os dois anotam na mesma
-lista, o app busca preço em **Angeloni, Festval, Muffato e Condor**, diz onde
-vale mais a pena comprar, e no mercado vira a lista de conferência do carrinho.
+Quatro mercados, uma lista. A lista de compras da casa, compartilhada: todo
+mundo da família anota na mesma lista, o app busca preço em **Angeloni,
+Festval, Muffato e Condor**, diz onde vale mais a pena comprar, e no mercado
+vira a lista de conferência do carrinho.
+
+Cada família tem a sua lista, isolada das outras — dá para usar junto com a
+casa da mãe sem que uma veja as compras da outra.
 
 É um PWA — instala no celular pela tela de início e continua funcionando
 quando o sinal cai dentro do mercado.

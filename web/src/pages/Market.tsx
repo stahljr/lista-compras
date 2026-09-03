@@ -12,6 +12,7 @@ import { EmptyState, Page, SectionTitle, Topbar } from '@/components/Layout';
 import { ProductCard, ProductCardSkeleton } from '@/components/ProductCard';
 import { ProductDialog } from '@/components/ProductDialog';
 import { Shelf } from '@/components/Shelf';
+import { Hero } from '@/components/Hero';
 import { Filtros as BarraDeFiltros, SEM_FILTRO, paraBusca, temFiltro } from '@/components/Filtros';
 import type { Facetas, Filtros } from '@/components/Filtros';
 import type { Product, ShoppingList } from '@/lib/types';
@@ -314,6 +315,10 @@ export default function Market() {
       </Topbar>
 
       <Page>
+        {/* A faixa de abertura aparece so na tela cheia do mercado: com busca
+            aberta ou corredor escolhido, o espaco e do resultado. */}
+        {!buscando && !aberto && <Hero />}
+
         <div className="relative">
           <Search className="text-muted-foreground/70 pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2" />
           <Input
