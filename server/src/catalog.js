@@ -1,7 +1,7 @@
 import { db, metaGet, metaSet } from './db.js';
-import { fold, classify, CATEGORIES } from './categories.js';
+import { fold, classify, CATEGORIES, categoryLabel, categoryOrder } from './categories.js';
 import { termosDe } from './catalog-terms.js';
-import { subclassify, parseSize, subsOf } from './facets.js';
+import { subclassify, parseSize, facetar, filtrar } from './facets.js';
 import { MARKETS, MARKET_BY_KEY, acrossMarkets } from './markets/index.js';
 
 const SEARCH_TTL_MINUTES = Number(process.env.SEARCH_TTL_MINUTES || 360);
@@ -159,6 +159,7 @@ function montar(product, rows) {
     category: product.category,
     subcategory: product.subcategory,
     sizeLabel: product.size_label,
+    sizeValue: product.size_value,
     imageUrl: product.image_url,
     unit: product.unit,
     categoryLocked: !!product.category_locked,
@@ -355,72 +356,62 @@ export async function productsByCategory(category, { limit = 60, offset = 0 } = 
  * Um corredor tem centenas de produtos, nao milhares: sai numa consulta e o
  * cruzamento e feito aqui, que fica mais simples de ler do que seis SQLs.
  */
-export async function categoryView(category, { sub = null, brand = null, size = null, limit = 60, offset = 0 } = {}) {
-  const rows = await db
-    .prepare(
-      `SELECT p.id, p.name, p.brand, p.subcategory, p.size_label, p.size_value,
-              COUNT(DISTINCT o.market) AS mercados
-         FROM products p
-         JOIN offers o ON o.product_id = p.id AND o.price > 0
-        WHERE p.category = ?
-        GROUP BY p.id
-        ORDER BY mercados DESC, p.name`,
-    )
-    .all(category);
+/**
+ * O contexto que os filtros usam para se nomear e se ordenar.
+ */
+export const contextoDeFiltros = (category = null) => ({
+  category,
+  categoryLabel,
+  categoryOrder,
+  marketLabel: (key) => MARKET_BY_KEY.get(key)?.label || key,
+  marketOrder: (key) => MARKETS.findIndex((m) => m.key === key),
+});
 
-  const casaSub = (r) => !sub || (sub === 'outros' ? !r.subcategory : r.subcategory === sub);
-  const casaMarca = (r) => !brand || r.brand === brand;
-  const casaTamanho = (r) => !size || r.size_label === size;
-  const casa = (r, exceto) =>
-    (exceto === 'sub' || casaSub(r)) && (exceto === 'brand' || casaMarca(r)) && (exceto === 'size' || casaTamanho(r));
+export const DIMENSOES_CORREDOR = ['sub', 'brand', 'size', 'market'];
+export const DIMENSOES_BUSCA = ['category', 'brand', 'size', 'market'];
 
-  const contar = (exceto, campo) => {
-    const mapa = new Map();
-    for (const r of rows) {
-      if (!casa(r, exceto)) continue;
-      const valor = r[campo];
-      if (valor == null || valor === '') continue;
-      const atual = mapa.get(valor) || { count: 0, ordem: r.size_value ?? 0 };
-      atual.count += 1;
-      mapa.set(valor, atual);
-    }
-    return mapa;
-  };
+/** Transforma o produto hidratado no formato que o motor de filtros entende. */
+export const linhaDeProduto = (p) => ({
+  id: p.id,
+  name: p.name,
+  brand: p.brand,
+  category: p.category,
+  subcategory: p.subcategory,
+  size_label: p.sizeLabel,
+  size_value: p.sizeValue,
+  markets: p.offers.filter((o) => o.available && o.price > 0).map((o) => o.market),
+});
 
-  const porSub = contar('sub', 'subcategory');
-  const porMarca = contar('brand', 'brand');
-  const porTamanho = contar('size', 'size_label');
+/**
+ * O corredor com os filtros que afunilam: tipo, marca, tamanho e mercado.
+ *
+ * Um corredor tem centenas de produtos, nao milhares: as colunas que os filtros
+ * precisam saem numa consulta, e o cruzamento e feito aqui -- fica mais simples
+ * de ler do que oito SQLs, e e o mesmo motor que a busca usa.
+ */
+export async function categoryView(category, { sub = null, brand = null, size = null, market = null, limit = 60, offset = 0 } = {}) {
+  const rows = (
+    await db
+      .prepare(
+        `SELECT p.id, p.name, p.brand, p.subcategory, p.size_label, p.size_value,
+                COUNT(DISTINCT o.market) AS mercados,
+                string_agg(DISTINCT o.market, ',') AS lojas
+           FROM products p
+           JOIN offers o ON o.product_id = p.id AND o.price > 0
+          WHERE p.category = ?
+          GROUP BY p.id
+          ORDER BY mercados DESC, p.name`,
+      )
+      .all(category)
+  ).map((r) => ({ ...r, markets: String(r.lojas || '').split(',').filter(Boolean) }));
 
-  const subs = subsOf(category)
-    .filter((s) => porSub.has(s.key))
-    .map((s) => ({ ...s, count: porSub.get(s.key).count }));
-  // Nem todo produto cai numa regra; sem esta linha eles ficariam invisiveis
-  // para quem estivesse filtrando.
-  const semSub = rows.filter((r) => casa(r, 'sub') && !r.subcategory).length;
-  if (semSub && subs.length) subs.push({ key: 'outros', label: 'Outros', count: semSub });
-
-  const brands = [...porMarca.entries()]
-    .map(([key, v]) => ({ key, label: key, count: v.count }))
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'pt-BR'))
-    .slice(0, 24);
-
-  // Corta pelos tamanhos mais comuns e so depois ordena do menor para o
-  // maior: cortar na ordem de tamanho jogaria fora justamente o "5 kg".
-  // Tamanho de um produto so nao e filtro, e ficava na frente da fila
-  // empurrando o "1 kg" para fora da tela -- some, a menos que sobre pouco.
-  const todosTamanhos = [...porTamanho.entries()]
-    .map(([key, v]) => ({ key, label: key, count: v.count, ordem: v.ordem }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 16);
-  const usados = todosTamanhos.filter((t) => t.count > 1);
-  const sizes = (usados.length >= 2 ? usados : todosTamanhos)
-    .sort((a, b) => a.ordem - b.ordem)
-    .map(({ ordem, ...resto }) => resto);
-
-  const filtrados = rows.filter((r) => casa(r, null));
+  const filtros = { sub, brand, size, market };
+  const ctx = contextoDeFiltros(category);
+  const facets = facetar(rows, filtros, DIMENSOES_CORREDOR, ctx);
+  const filtrados = filtrar(rows, filtros, DIMENSOES_CORREDOR);
   const products = await hidratarVarios(filtrados.slice(offset, offset + limit).map((r) => r.id));
 
-  return { products, total: filtrados.length, facets: { subs, brands, sizes } };
+  return { products, total: filtrados.length, facets };
 }
 
 /**
@@ -480,25 +471,39 @@ export async function shelves({ perCategory = 10 } = {}) {
  * Enche um corredor buscando nos mercados os termos daquela categoria. E o que
  * permite abrir "Higiene" ou "Pet" e ver produto sem ter rodado o seed antes.
  */
-export async function fillCategory(key, { minimo = 12 } = {}) {
+export async function fillCategory(key, { minimo = 40, maxTermos = 5 } = {}) {
   const termos = termosDe(key);
-  if (!termos.length) return { buscados: 0 };
+  if (!termos.length) return { buscados: 0, novos: 0 };
+
+  // Termo que ja esta no cache nao traz nada de novo: a busca responderia do
+  // proprio cache sem falar com os mercados. Entao cada rodada pega os termos
+  // ainda nao usados -- e assim tocar "buscar mais" traz produto de verdade.
+  const usados = new Set(
+    (await db.prepare('SELECT DISTINCT term FROM search_cache').all()).map((r) => r.term),
+  );
+  const inéditos = termos.filter((t) => !usados.has(normalizeTerm(t)));
+  const fila = (inéditos.length ? inéditos : termos).slice(0, maxTermos);
+
+  const antes = await contarCategoria(key);
   let buscados = 0;
-  for (const termo of termos) {
-    const atual = Number(
-      (
-        await db
-          .prepare(
-            `SELECT COUNT(*) AS n FROM products p JOIN offers o ON o.product_id = p.id AND o.price > 0 WHERE p.category = ?`,
-          )
-          .get(key)
-      ).n,
-    );
-    if (atual >= minimo) break;
+  for (const termo of fila) {
+    if ((await contarCategoria(key)) >= minimo) break;
     await unifiedSearch(termo, { limit: 24 }).catch(() => null);
     buscados++;
   }
-  return { buscados };
+  const depois = await contarCategoria(key);
+  return { buscados, novos: depois - antes, total: depois, restantes: Math.max(0, inéditos.length - buscados) };
+}
+
+async function contarCategoria(key) {
+  const { n } = await db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM products p
+         JOIN offers o ON o.product_id = p.id AND o.price > 0
+        WHERE p.category = ?`,
+    )
+    .get(key);
+  return Number(n);
 }
 
 // Suba este numero ao mexer nas regras de categoria: a categoria fica gravada

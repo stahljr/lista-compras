@@ -43,7 +43,7 @@ export async function totalDoCatalogo() {
  * @param porCategoria quantos termos buscar em cada corredor
  * @param minimo       corredor que ja tem esse tanto de produto e pulado
  */
-export async function warmupCatalog({ porCategoria = 4, minimo = 14 } = {}) {
+export async function warmupCatalog({ porCategoria = 6, minimo = 40 } = {}) {
   if (estado.rodando) return warmupState();
 
   const alvos = CATEGORIES.filter((c) => c.key !== 'outros');
@@ -97,7 +97,7 @@ export function warmupOnBoot() {
       const total = await totalDoCatalogo();
       if (total >= 120) return;
       console.log(`[catalogo] ${total} produtos no banco: enchendo as prateleiras em segundo plano`);
-      await warmupCatalog({ porCategoria: 3 });
+      await warmupCatalog({ porCategoria: 4 });
     } catch (err) {
       console.error('[catalogo] aquecimento falhou:', err.message);
     }

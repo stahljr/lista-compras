@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardList, PackageOpen, Search, Store, TriangleAlert } from 'lucide-react';
+import { ChevronDown, ClipboardList, PackageOpen, RefreshCw, Search, Store, TriangleAlert } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useStore } from '@/lib/store';
 import { quantity as fmtQty } from '@/lib/format';
@@ -12,8 +12,8 @@ import { EmptyState, Page, SectionTitle, Topbar } from '@/components/Layout';
 import { ProductCard, ProductCardSkeleton } from '@/components/ProductCard';
 import { ProductDialog } from '@/components/ProductDialog';
 import { Shelf } from '@/components/Shelf';
-import { CategoryFilters, SEM_FILTRO, temFiltro } from '@/components/CategoryFilters';
-import type { Facetas, Filtros } from '@/components/CategoryFilters';
+import { Filtros as BarraDeFiltros, SEM_FILTRO, paraBusca, temFiltro } from '@/components/Filtros';
+import type { Facetas, Filtros } from '@/components/Filtros';
 import type { Product, ShoppingList } from '@/lib/types';
 
 type Corredor = {
@@ -25,7 +25,7 @@ type Corredor = {
   coverChosen: boolean;
   products: Product[];
 };
-type Busca = { products: Product[]; failed: { market: string; error: string }[] };
+type Busca = { products: Product[]; total: number; facets: Facetas; failed: { market: string; error: string }[] };
 /** Estado do aquecimento do catalogo (o app enchendo as prateleiras). */
 type Aquecimento = { rodando: boolean; total: number; feitos: number; produtos: number; corredor: string | null };
 
@@ -89,9 +89,13 @@ export default function Market() {
   const [aberto, setAberto] = useState<string | null>(null);
   const [doCorredor, setDoCorredor] = useState<Product[]>([]);
   const [totalCorredor, setTotalCorredor] = useState(0);
-  const [facetas, setFacetas] = useState<Facetas>({ subs: [], brands: [], sizes: [] });
+  const [facetas, setFacetas] = useState<Facetas>({});
   const [filtros, setFiltros] = useState<Filtros>(SEM_FILTRO);
+  const [facetasBusca, setFacetasBusca] = useState<Facetas>({});
+  const [filtrosBusca, setFiltrosBusca] = useState<Filtros>(SEM_FILTRO);
+  const [totalBusca, setTotalBusca] = useState(0);
   const [aquecendo, setAquecendo] = useState<Aquecimento | null>(null);
+  const [buscandoMais, setBuscandoMais] = useState(false);
   const [carregando, setCarregando] = useState(false);
   const [added, setAdded] = useState<Record<number, boolean>>({});
   const [erro, setErro] = useState('');
@@ -136,6 +140,37 @@ export default function Market() {
     return () => window.clearInterval(id);
   }, [aquecendo?.rodando, recarregarCorredores]);
 
+  /** Proxima pagina do corredor, acrescentada ao que ja esta na tela. */
+  async function verMais() {
+    if (!aberto) return;
+    setCarregando(true);
+    try {
+      const busca = new URLSearchParams({ limit: '60', offset: String(doCorredor.length), fill: '0' });
+      for (const [chave, valor] of Object.entries(filtros)) if (valor) busca.set(chave, String(valor));
+      const d = await api.get<{ products: Product[] }>(`/catalog/categories/${aberto}?${busca}`);
+      setDoCorredor((atual) => [...atual, ...d.products]);
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  /** Vai aos mercados buscar mais produtos deste corredor. */
+  async function buscarMaisNoCorredor() {
+    if (!aberto) return;
+    setErro('');
+    setBuscandoMais(true);
+    try {
+      const r = await api.post<{ novos: number }>(`/catalog/categories/${aberto}/fill`, { termos: 4 });
+      await carregarCorredor(aberto, filtros);
+      void recarregarCorredores();
+      notify(r.novos > 0 ? `${r.novos} produtos novos no corredor` : 'Nada novo por aqui desta vez');
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'não deu para buscar mais');
+    } finally {
+      setBuscandoMais(false);
+    }
+  }
+
   async function encherPrateleiras() {
     setErro('');
     try {
@@ -146,18 +181,25 @@ export default function Market() {
     }
   }
 
-  const buscar = useCallback(async (q: string) => {
+  const buscar = useCallback(async (q: string, f: Filtros) => {
     if (q.trim().length < 2) {
       setResultados([]);
       setFalhas([]);
+      setFacetasBusca({});
+      setTotalBusca(0);
       return;
     }
     setCarregando(true);
     setErro('');
     try {
-      const d = await api.get<Busca>(`/catalog/search?q=${encodeURIComponent(q)}&limit=40`);
+      const extra = paraBusca(f);
+      const d = await api.get<Busca>(
+        `/catalog/search?q=${encodeURIComponent(q)}&limit=40${extra ? `&${extra}` : ''}`,
+      );
       setResultados(d.products);
       setFalhas(d.failed || []);
+      setFacetasBusca(d.facets || {});
+      setTotalBusca(d.total ?? d.products.length);
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'a busca falhou');
     } finally {
@@ -167,9 +209,15 @@ export default function Market() {
 
   useEffect(() => {
     window.clearTimeout(debounce.current);
-    debounce.current = window.setTimeout(() => void buscar(term), 450);
+    debounce.current = window.setTimeout(() => void buscar(term, filtrosBusca), 450);
     return () => window.clearTimeout(debounce.current);
-  }, [term, buscar]);
+  }, [term, filtrosBusca, buscar]);
+
+  // Palavra nova comeca sem filtro: a marca da busca anterior nao vale para a
+  // proxima, e deixa-la ligada esconderia o resultado sem explicacao.
+  useEffect(() => {
+    setFiltrosBusca(SEM_FILTRO);
+  }, [term]);
 
   /**
    * Carrega o corredor com os filtros marcados. A resposta traz tambem as
@@ -181,9 +229,7 @@ export default function Market() {
       setCarregando(true);
       try {
         const busca = new URLSearchParams({ limit: '60' });
-        if (f.sub) busca.set('sub', f.sub);
-        if (f.brand) busca.set('brand', f.brand);
-        if (f.size) busca.set('size', f.size);
+        for (const [chave, valor] of Object.entries(f)) if (valor) busca.set(chave, String(valor));
         // O servidor enche o corredor buscando nos mercados quando ainda esta
         // vazio, entao esta chamada pode levar alguns segundos.
         const d = await api.get<{ products: Product[]; total: number; facets: Facetas }>(
@@ -191,7 +237,7 @@ export default function Market() {
         );
         setDoCorredor(d.products);
         setTotalCorredor(d.total ?? d.products.length);
-        setFacetas(d.facets ?? { subs: [], brands: [], sizes: [] });
+        setFacetas(d.facets ?? {});
       } finally {
         setCarregando(false);
       }
@@ -244,7 +290,7 @@ export default function Market() {
     setAberto(null);
     setDoCorredor([]);
     setFiltros(SEM_FILTRO);
-    setFacetas({ subs: [], brands: [], sizes: [] });
+    setFacetas({});
   };
 
   // Corredor nenhum com produto: banco novo, catalogo por encher.
@@ -357,9 +403,18 @@ export default function Market() {
             <SectionTitle action={<span className="text-muted-foreground text-sm">{resultados.length}</span>}>
               Resultados
             </SectionTitle>
+            <BarraDeFiltros
+              facetas={facetasBusca}
+              filtros={filtrosBusca}
+              total={totalBusca}
+              dimensoes={['category', 'brand', 'size', 'market']}
+              onChange={setFiltrosBusca}
+            />
             {!resultados.length && !carregando ? (
               <EmptyState icon={<Search />} title="Nada encontrado">
-                Tente escrever de outro jeito, ou anote à mão na lista.
+                {temFiltro(filtrosBusca)
+                  ? 'Nada com esses filtros. Solte um deles, ou toque em Limpar.'
+                  : 'Tente escrever de outro jeito, ou anote à mão na lista.'}
               </EmptyState>
             ) : (
               <div className={grade}>
@@ -384,7 +439,13 @@ export default function Market() {
             >
               {corredorAberto?.label}
             </SectionTitle>
-            <CategoryFilters facetas={facetas} filtros={filtros} total={totalCorredor} onChange={filtrar} />
+            <BarraDeFiltros
+              facetas={facetas}
+              filtros={filtros}
+              total={totalCorredor}
+              dimensoes={['sub', 'brand', 'size', 'market']}
+              onChange={filtrar}
+            />
             {carregando && !doCorredor.length ? (
               <>
                 <p className="text-muted-foreground mb-4 text-sm">
@@ -401,11 +462,28 @@ export default function Market() {
                 Solte um dos filtros para ver mais — ou toque em Limpar.
               </EmptyState>
             ) : (
-              <div className={grade}>
-                {doCorredor.map((p) => (
-                  <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q, u) => void add(p, q, u)} onOpen={() => setAberto2(p)} />
-                ))}
-              </div>
+              <>
+                <div className={grade}>
+                  {doCorredor.map((p) => (
+                    <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q, u) => void add(p, q, u)} onOpen={() => setAberto2(p)} />
+                  ))}
+                </div>
+
+                <div className="mt-4 flex flex-col items-center gap-2">
+                  {doCorredor.length < totalCorredor && (
+                    <Button variant="outline" disabled={carregando} onClick={() => void verMais()}>
+                      <ChevronDown />
+                      Ver mais {Math.min(60, totalCorredor - doCorredor.length)} de {totalCorredor}
+                    </Button>
+                  )}
+                  {/* O catalogo vem dos mercados aos poucos; quando o corredor
+                      esta magro, vale ir buscar mais termos la. */}
+                  <Button variant="ghost" size="sm" disabled={buscandoMais} onClick={() => void buscarMaisNoCorredor()}>
+                    <RefreshCw className={buscandoMais ? 'animate-spin' : undefined} />
+                    {buscandoMais ? 'Buscando nos mercados…' : 'Buscar mais produtos deste corredor'}
+                  </Button>
+                </div>
+              </>
             )}
           </>
         )}

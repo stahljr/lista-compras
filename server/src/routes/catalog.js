@@ -1,5 +1,21 @@
 import express from 'express';
-import { unifiedSearch, categoryCounts, productsByCategory, categoryView, shelves, fillCategory, setCategory, setCategoryCover, hydrate, fillMissingOffers, priceStats } from '../catalog.js';
+import {
+  unifiedSearch,
+  categoryCounts,
+  productsByCategory,
+  categoryView,
+  contextoDeFiltros,
+  linhaDeProduto,
+  DIMENSOES_BUSCA,
+  shelves,
+  fillCategory,
+  setCategory,
+  setCategoryCover,
+  hydrate,
+  fillMissingOffers,
+  priceStats,
+} from '../catalog.js';
+import { facetar, filtrar } from '../facets.js';
 import { CATEGORIES, CATEGORY_BY_KEY } from '../categories.js';
 import { marketInfo } from '../markets/index.js';
 import { requireAuth } from '../auth.js';
@@ -13,16 +29,39 @@ catalogRouter.use(requireAuth);
 
 catalogRouter.get('/markets', (_req, res) => res.json({ markets: marketInfo() }));
 
-/** Busca nos quatro mercados de uma vez e devolve o preco de cada um. */
+/**
+ * Busca nos quatro mercados de uma vez e devolve o preco de cada um -- com os
+ * mesmos filtros do corredor, porque quem busca "detergente" tambem quer
+ * afunilar por marca, tamanho ou mercado. No corredor a primeira faixa e o
+ * tipo; aqui e o corredor, ja que o resultado atravessa varios.
+ */
 catalogRouter.get('/search', async (req, res, next) => {
   try {
     const term = String(req.query.q || '');
-    if (term.trim().length < 2) return res.json({ products: [], failed: [] });
-    const result = await unifiedSearch(term, {
+    if (term.trim().length < 2) return res.json({ products: [], total: 0, failed: [], facets: {} });
+    const { products, failed, cachedMarkets } = await unifiedSearch(term, {
       limit: Math.min(Number(req.query.limit) || 24, 40),
       fresh: req.query.fresh === '1',
     });
-    res.json(result);
+
+    const filtros = {
+      category: req.query.category ? String(req.query.category) : null,
+      brand: req.query.brand ? String(req.query.brand) : null,
+      size: req.query.size ? String(req.query.size) : null,
+      market: req.query.market ? String(req.query.market) : null,
+    };
+    const rows = products.map(linhaDeProduto);
+    const ctx = contextoDeFiltros();
+    const facets = facetar(rows, filtros, DIMENSOES_BUSCA, ctx);
+    const escolhidos = new Set(filtrar(rows, filtros, DIMENSOES_BUSCA).map((r) => r.id));
+
+    res.json({
+      products: products.filter((p) => escolhidos.has(p.id)),
+      total: escolhidos.size,
+      facets,
+      failed,
+      cachedMarkets,
+    });
   } catch (err) {
     next(err);
   }
@@ -71,17 +110,34 @@ catalogRouter.get('/categories/:key', async (req, res, next) => {
       sub: req.query.sub ? String(req.query.sub) : null,
       brand: req.query.brand ? String(req.query.brand) : null,
       size: req.query.size ? String(req.query.size) : null,
+      market: req.query.market ? String(req.query.market) : null,
     };
     let view = await categoryView(key, filtros);
     // Corredor vazio (ou quase) busca nos mercados na hora, para nao mostrar
     // prateleira vazia so porque o seed ainda nao passou por ali. Com filtro
     // marcado nao faz sentido: pouco resultado ali e o filtro funcionando.
-    const semFiltro = !filtros.sub && !filtros.brand && !filtros.size;
+    const semFiltro = !filtros.sub && !filtros.brand && !filtros.size && !filtros.market;
     if (req.query.fill !== '0' && semFiltro && !filtros.offset && view.products.length < 12) {
-      await fillCategory(key);
+      await fillCategory(key, { minimo: 24, maxTermos: 4 });
       view = await categoryView(key, filtros);
     }
     res.json(view);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Busca mais produtos deste corredor nos mercados, a pedido. Cada toque pega
+ * os proximos termos ainda nao usados -- e por isso traz coisa nova, e nao a
+ * mesma prateleira de novo.
+ */
+catalogRouter.post('/categories/:key/fill', async (req, res, next) => {
+  try {
+    const key = req.params.key;
+    if (!CATEGORY_BY_KEY.has(key)) return res.status(400).json({ error: 'categoria desconhecida' });
+    const r = await fillCategory(key, { minimo: 400, maxTermos: Math.min(Number(req.body?.termos) || 4, 8) });
+    res.json(r);
   } catch (err) {
     next(err);
   }

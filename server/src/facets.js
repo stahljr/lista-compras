@@ -228,3 +228,136 @@ export function parseSize(productName) {
   if (!Number.isFinite(valor) || valor <= 0) return null;
   return { label: escreve(valor, u.kind, u.palavra), value: valor, kind: u.kind };
 }
+
+/**
+ * A marca como chave de agrupamento.
+ *
+ * Cada mercado escreve do seu jeito -- "YPÊ", "Ypê", "ype" -- e sem dobrar
+ * essas variacoes numa chave so o filtro de marca virava tres filtros que
+ * escondiam produtos um do outro. Foi o que aconteceu com o detergente: filtrar
+ * "Ypê" no corredor de limpeza nao trazia o que estava gravado como "YPÊ".
+ */
+export const brandKey = (marca) => fold(marca).replace(/[^a-z0-9]+/g, ' ').trim();
+
+/**
+ * Como a marca aparece na tela. Entre as variacoes, ganha a mais frequente; se
+ * ela vier gritando em caixa alta, volta para caixa de titulo -- "IMPERATRIZ"
+ * no meio de uma fileira de etiquetas parece erro.
+ */
+export function brandLabel(variacoes) {
+  const contagem = new Map();
+  for (const v of variacoes) contagem.set(v, (contagem.get(v) || 0) + 1);
+  const escolhida = [...contagem.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR'))[0][0];
+  const semAcento = escolhida.replace(/[^A-Za-zÀ-ÿ]/g, '');
+  if (semAcento.length > 2 && escolhida === escolhida.toUpperCase()) {
+    return escolhida
+      .toLowerCase()
+      .replace(/(^|[\s\-/])([a-zà-ÿ])/g, (_, antes, letra) => antes + letra.toUpperCase());
+  }
+  return escolhida;
+}
+
+/**
+ * As dimensoes pelas quais se filtra uma prateleira. Cada uma sabe extrair os
+ * seus valores de um produto, como se chama na tela e em que ordem aparece.
+ *
+ * O mercado e multivalorado (um produto esta em varios), e por isso mora aqui
+ * junto das outras em vez de virar um caso especial em cada consulta.
+ */
+export const DIMENSOES = {
+  sub: {
+    valores: (r) => (r.subcategory ? [r.subcategory] : ['outros']),
+    rotulo: (chave, _v, ctx) => (chave === 'outros' ? 'Outros' : subLabel(ctx.category, chave)),
+    ordem: (a, b, ctx) => ordemSub(ctx.category, a.key) - ordemSub(ctx.category, b.key),
+  },
+  category: {
+    valores: (r) => (r.category ? [r.category] : []),
+    rotulo: (chave, _v, ctx) => ctx.categoryLabel?.(chave) ?? chave,
+    ordem: (a, b, ctx) => (ctx.categoryOrder?.(a.key) ?? 0) - (ctx.categoryOrder?.(b.key) ?? 0),
+  },
+  brand: {
+    valores: (r) => {
+      const chave = brandKey(r.brand);
+      return chave ? [chave] : [];
+    },
+    rotulo: (_chave, variacoes) => brandLabel(variacoes),
+    ordem: (a, b) => b.count - a.count || a.label.localeCompare(b.label, 'pt-BR'),
+    // Marca com um produto so nao ajuda a afunilar, e sao dezenas delas.
+    corte: (itens) => {
+      const usadas = itens.filter((i) => i.count > 1);
+      return (usadas.length >= 2 ? usadas : itens).slice(0, 30);
+    },
+  },
+  size: {
+    valores: (r) => (r.size_label ? [r.size_label] : []),
+    rotulo: (chave) => chave,
+    ordem: (a, b) => a.ordem - b.ordem,
+    corte: (itens) => {
+      // Tamanho de um produto so nao e filtro, e ficava na frente da fila
+      // empurrando o "1 kg" para fora da tela.
+      const usados = itens.filter((i) => i.count > 1);
+      return (usados.length >= 2 ? usados : itens).slice(0, 20);
+    },
+  },
+  market: {
+    valores: (r) => r.markets || [],
+    rotulo: (chave, _v, ctx) => ctx.marketLabel?.(chave) ?? chave,
+    ordem: (a, b, ctx) => (ctx.marketOrder?.(a.key) ?? 0) - (ctx.marketOrder?.(b.key) ?? 0),
+  },
+};
+
+function ordemSub(category, key) {
+  const regras = SUBCATEGORIAS[category] || [];
+  const i = regras.findIndex(([k]) => k === key);
+  return i < 0 ? 99 : i;
+}
+
+/** O produto atende ao filtro daquela dimensao? */
+function atende(row, dim, escolhido) {
+  if (!escolhido) return true;
+  const valores = DIMENSOES[dim].valores(row);
+  if (dim === 'brand') {
+    // Marca casa tambem pelo nome: produto que veio sem marca preenchida, mas
+    // com "ypê" no nome, e Ypê para quem esta filtrando.
+    return valores.includes(escolhido) || fold(row.name).includes(escolhido);
+  }
+  return valores.includes(escolhido);
+}
+
+/**
+ * Conta as opcoes de cada filtro. A contagem de uma dimensao ignora o filtro
+ * dela mesma: com "Refrigerante" marcado, as marcas mostram quantos
+ * refrigerantes cada uma tem, e os tipos continuam mostrando a prateleira
+ * inteira -- e o que permite trocar de tipo sem cair numa tela vazia.
+ */
+export function facetar(rows, filtros, dimensoes, ctx = {}) {
+  const casa = (row, exceto) => dimensoes.every((dim) => dim === exceto || atende(row, dim, filtros[dim]));
+
+  const facetas = {};
+  for (const dim of dimensoes) {
+    const grupos = new Map();
+    for (const row of rows) {
+      if (!casa(row, dim)) continue;
+      for (const valor of DIMENSOES[dim].valores(row)) {
+        if (!grupos.has(valor)) grupos.set(valor, { count: 0, variacoes: [], ordem: row.size_value ?? 0 });
+        const grupo = grupos.get(valor);
+        grupo.count += 1;
+        if (dim === 'brand' && row.brand) grupo.variacoes.push(row.brand);
+      }
+    }
+    let itens = [...grupos.entries()].map(([key, g]) => ({
+      key,
+      label: DIMENSOES[dim].rotulo(key, g.variacoes, ctx),
+      count: g.count,
+      ordem: g.ordem,
+    }));
+    itens.sort((a, b) => DIMENSOES[dim].ordem(a, b, ctx));
+    if (DIMENSOES[dim].corte) itens = DIMENSOES[dim].corte(itens);
+    facetas[dim] = itens.map(({ ordem, ...resto }) => resto);
+  }
+  return facetas;
+}
+
+/** Aplica todos os filtros de uma vez. */
+export const filtrar = (rows, filtros, dimensoes) =>
+  rows.filter((row) => dimensoes.every((dim) => atende(row, dim, filtros[dim])));
