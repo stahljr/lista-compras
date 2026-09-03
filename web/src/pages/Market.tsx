@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardList, Search, Store, TriangleAlert } from 'lucide-react';
+import { ClipboardList, PackageOpen, Search, Store, TriangleAlert } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useStore } from '@/lib/store';
 import { quantity as fmtQty } from '@/lib/format';
@@ -26,6 +26,8 @@ type Corredor = {
   products: Product[];
 };
 type Busca = { products: Product[]; failed: { market: string; error: string }[] };
+/** Estado do aquecimento do catalogo (o app enchendo as prateleiras). */
+type Aquecimento = { rodando: boolean; total: number; feitos: number; produtos: number; corredor: string | null };
 
 /** A foto do corredor vem escolhida do servidor, com recurso automatico. */
 function capaDo(c: Corredor) {
@@ -41,7 +43,7 @@ function CorredorTile({ c, ativo, onClick }: { c: Corredor; ativo: boolean; onCl
     <button onClick={onClick} className="group flex snap-start flex-col items-center gap-1.5">
       <span
         className={cn(
-          'relative grid size-[5.75rem] place-items-center overflow-hidden rounded-2xl border bg-neutral-50 shadow-sm transition-all md:size-28',
+          'relative grid size-[4.5rem] place-items-center overflow-hidden rounded-2xl border bg-neutral-50 shadow-sm transition-all md:size-[5.25rem]',
           ativo ? 'border-primary ring-primary/30 ring-2' : 'group-hover:border-primary/50',
         )}
       >
@@ -55,16 +57,16 @@ function CorredorTile({ c, ativo, onClick }: { c: Corredor; ativo: boolean; onCl
               decoding="async"
               onLoad={() => setCarregada(true)}
               onError={() => setQuebrada(true)}
-              className={cn('relative size-full object-contain p-2 transition-opacity duration-300', carregada ? 'opacity-100' : 'opacity-0')}
+              className={cn('relative size-full object-contain p-1.5 transition-opacity duration-300', carregada ? 'opacity-100' : 'opacity-0')}
             />
           </>
         ) : (
-          <span className="text-3xl" aria-hidden="true">
+          <span className="text-2xl" aria-hidden="true">
             {c.emoji}
           </span>
         )}
       </span>
-      <span className="w-[5.75rem] text-center text-xs leading-tight font-semibold tracking-tight md:w-28 md:text-[12.5px]">
+      <span className="w-[4.5rem] text-center text-[11px] leading-tight font-semibold tracking-tight md:w-[5.25rem] md:text-xs">
         {c.label}
       </span>
     </button>
@@ -89,6 +91,7 @@ export default function Market() {
   const [totalCorredor, setTotalCorredor] = useState(0);
   const [facetas, setFacetas] = useState<Facetas>({ subs: [], brands: [], sizes: [] });
   const [filtros, setFiltros] = useState<Filtros>(SEM_FILTRO);
+  const [aquecendo, setAquecendo] = useState<Aquecimento | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [added, setAdded] = useState<Record<number, boolean>>({});
   const [erro, setErro] = useState('');
@@ -110,7 +113,38 @@ export default function Market() {
 
   useEffect(() => {
     void recarregarCorredores().finally(() => setCarregandoCorredores(false));
+    // O servidor comeca a encher o catalogo sozinho quando o banco e novo;
+    // perguntar aqui faz a tela mostrar o progresso em vez de parecer vazia.
+    void api
+      .get<{ warmup: Aquecimento }>('/catalog/warmup')
+      .then((d) => setAquecendo(d.warmup))
+      .catch(() => {});
   }, [recarregarCorredores]);
+
+  // Enquanto as prateleiras enchem, a tela se atualiza sozinha.
+  useEffect(() => {
+    if (!aquecendo?.rodando) return;
+    const id = window.setInterval(async () => {
+      try {
+        const d = await api.get<{ warmup: Aquecimento }>('/catalog/warmup');
+        setAquecendo(d.warmup);
+        await recarregarCorredores();
+      } catch {
+        /* sem rede agora; a proxima volta tenta de novo */
+      }
+    }, 4000);
+    return () => window.clearInterval(id);
+  }, [aquecendo?.rodando, recarregarCorredores]);
+
+  async function encherPrateleiras() {
+    setErro('');
+    try {
+      const { warmup } = await api.post<{ warmup: Aquecimento }>('/catalog/warmup', { porCategoria: 4 });
+      setAquecendo(warmup.rodando ? warmup : { ...warmup, rodando: true });
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'não deu para encher as prateleiras');
+    }
+  }
 
   const buscar = useCallback(async (q: string) => {
     if (q.trim().length < 2) {
@@ -213,6 +247,9 @@ export default function Market() {
     setFacetas({ subs: [], brands: [], sizes: [] });
   };
 
+  // Corredor nenhum com produto: banco novo, catalogo por encher.
+  const vazio = !carregandoCorredores && corredores.length > 0 && corredores.every((c) => !c.total);
+
   const grade = 'grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:gap-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6';
   const corredorAberto = corredores.find((c) => c.key === aberto);
 
@@ -263,6 +300,42 @@ export default function Market() {
               ))}
             </div>
           </>
+        )}
+
+        {(vazio || aquecendo?.rodando) && !buscando && (
+          <div className="bg-card mt-1 flex items-center gap-3 rounded-xl border p-3.5">
+            <PackageOpen className="text-muted-foreground size-8 shrink-0" />
+            <div className="min-w-0 flex-1">
+              {aquecendo?.rodando ? (
+                <>
+                  <p className="text-sm font-bold">Enchendo as prateleiras…</p>
+                  <p className="text-muted-foreground truncate text-xs">
+                    {aquecendo.corredor ? `${aquecendo.corredor} · ` : ''}
+                    {aquecendo.feitos} de {aquecendo.total} buscas · {aquecendo.produtos} produtos
+                  </p>
+                  <div className="bg-muted mt-1.5 h-1.5 overflow-hidden rounded-full">
+                    <div
+                      className="bg-primary h-full rounded-full transition-all"
+                      style={{ width: `${aquecendo.total ? Math.round((aquecendo.feitos / aquecendo.total) * 100) : 0}%` }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-bold">As prateleiras estão vazias</p>
+                  <p className="text-muted-foreground text-xs">
+                    O catálogo vem dos quatro mercados. Dá para buscar um produto direto, ou encher os corredores
+                    agora.
+                  </p>
+                </>
+              )}
+            </div>
+            {!aquecendo?.rodando && (
+              <Button size="sm" onClick={() => void encherPrateleiras()}>
+                Encher
+              </Button>
+            )}
+          </div>
         )}
 
         {erro && (

@@ -22,6 +22,7 @@ const q = {
   insertProduct: db.prepare(`
     INSERT INTO products (ean, match_key, name, brand, category, image_url, unit)
     VALUES (@ean, @matchKey, @name, @brand, @category, @imageUrl, @unit)
+    RETURNING id
   `),
   touchProduct: db.prepare(`
     UPDATE products

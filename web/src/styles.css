@@ -1,9 +1,10 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
-/* O shadcn/ui usa a classe .dark, nao a media query: e assim que os
-   utilitarios "dark:" dos componentes colados de fora funcionam. Quem coloca a
-   classe e o script no index.html, antes da pintura. */
+/* O app e sempre claro. A variante continua declarada porque componentes
+   colados do shadcn trazem utilitarios "dark:" no meio das classes -- sem a
+   variante o Tailwind reclama deles. Como ninguem poe a classe .dark no html,
+   eles nunca valem. */
 @custom-variant dark (&:is(.dark *));
 
 /* ---------------------------------------------------------------- tokens
@@ -12,6 +13,9 @@
    levemente quente no claro e carvao quente no escuro. Componente colado de
    fora ja nasce com a nossa cara, sem editar cor nenhuma. */
 :root {
+  /* Nada de tema escuro: campos, barras de rolagem e controles nativos
+     tambem seguem claros. */
+  color-scheme: light;
   --radius: 0.9rem;
 
   --background: oklch(0.968 0.006 85);
@@ -41,33 +45,6 @@
   --ring: oklch(0.44 0.093 163);
 }
 
-.dark {
-  --background: oklch(0.17 0.009 75);
-  --foreground: oklch(0.95 0.012 85);
-  --card: oklch(0.215 0.011 75);
-  --card-foreground: oklch(0.95 0.012 85);
-  --popover: oklch(0.215 0.011 75);
-  --popover-foreground: oklch(0.95 0.012 85);
-
-  --primary: oklch(0.75 0.13 162);
-  --primary-foreground: oklch(0.19 0.02 160);
-  --secondary: oklch(0.265 0.013 75);
-  --secondary-foreground: oklch(0.95 0.012 85);
-  --muted: oklch(0.265 0.013 75);
-  --muted-foreground: oklch(0.69 0.014 80);
-  --accent: oklch(0.82 0.13 84);
-  --accent-foreground: oklch(0.2 0.03 70);
-
-  --destructive: oklch(0.68 0.15 25);
-  --destructive-foreground: oklch(0.16 0.01 30);
-  --success: oklch(0.75 0.13 162);
-  --success-foreground: oklch(0.19 0.02 160);
-  --sale: oklch(0.63 0.19 27);
-
-  --border: oklch(0.32 0.012 75);
-  --input: oklch(0.32 0.012 75);
-  --ring: oklch(0.75 0.13 162);
-}
 
 @theme inline {
   --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
@@ -368,11 +345,6 @@ a { color: var(--brand); }
    imagem em 46px, do tamanho de um favicon, e o nome disputava espaco com o
    botao de adicionar. */
 
-@media (prefers-color-scheme: dark) {
-  /* As fotos dos mercados vem com fundo branco recortado; manter o branco
-     evita a moldura cinza feia no tema escuro. */
-}
-
 /* Prateleira: rola na horizontal no celular, cabe em grade no desktop. */
 
 .sugestoes {
@@ -458,11 +430,6 @@ a { color: var(--brand); }
 .busca-mercado .input { padding-left: 40px; height: 46px; border-radius: 13px; }
 
 /* O cartao ganha borda que reage e sombra em duas camadas. */
-@media (prefers-color-scheme: dark) {
-  /* Foto de produto vem recortada em branco: manter o branco evita a moldura
-     cinza suja no tema escuro. */
-}
-
 /* O corredor com a capa mais alta que larga lembra a placa da gondola. */
 
 .card { border-radius: 15px; }
@@ -491,9 +458,6 @@ a { color: var(--brand); }
   transform: translateX(-100%);
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.42), transparent);
   animation: shimmer 1.4s infinite;
-}
-@media (prefers-color-scheme: dark) {
-  .skeleton::after { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent); }
 }
 @media (prefers-reduced-motion: reduce) {
   .skeleton::after { animation: none; }

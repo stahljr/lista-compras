@@ -9,6 +9,7 @@ import { tripsRouter } from './routes/trips.js';
 import { backupRouter } from './routes/backup.js';
 import { subscribe } from './realtime.js';
 import { startRefresher } from './refresher.js';
+import { warmupOnBoot } from './warmup.js';
 import { ensureClassifierFresh } from './catalog.js';
 import { migrate } from './db.js';
 
@@ -69,6 +70,8 @@ const reclass = await ensureClassifierFresh();
 if (reclass) console.log(`[categorias] ${reclass.mudados} de ${reclass.total} produtos reclassificados`);
 
 startRefresher();
+// Banco novo nasce sem catalogo, e prateleira vazia parece app quebrado.
+warmupOnBoot();
 
 app.listen(PORT, () => {
   console.log(`lista-compras: API em http://localhost:${PORT}`);

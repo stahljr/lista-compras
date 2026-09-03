@@ -3,6 +3,7 @@ import { unifiedSearch, categoryCounts, productsByCategory, categoryView, shelve
 import { CATEGORIES, CATEGORY_BY_KEY } from '../categories.js';
 import { marketInfo } from '../markets/index.js';
 import { requireAuth } from '../auth.js';
+import { warmupCatalog, warmupState, totalDoCatalogo } from '../warmup.js';
 
 export const catalogRouter = express.Router();
 
@@ -18,6 +19,24 @@ catalogRouter.get('/search', async (req, res, next) => {
       fresh: req.query.fresh === '1',
     });
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Enche as prateleiras a pedido. Responde na hora e segue trabalhando: quem
+ * pediu acompanha por GET, e a tela vai mostrando o que chega.
+ */
+catalogRouter.post('/warmup', requireAuth, (req, res) => {
+  const estado = warmupState();
+  if (!estado.rodando) void warmupCatalog({ porCategoria: Math.min(Number(req.body?.porCategoria) || 4, 8) });
+  res.json({ warmup: warmupState() });
+});
+
+catalogRouter.get('/warmup', async (_req, res, next) => {
+  try {
+    res.json({ warmup: warmupState(), total: await totalDoCatalogo() });
   } catch (err) {
     next(err);
   }
