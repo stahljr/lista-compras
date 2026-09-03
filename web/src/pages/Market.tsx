@@ -26,7 +26,13 @@ type Corredor = {
   coverChosen: boolean;
   products: Product[];
 };
-type Busca = { products: Product[]; total: number; facets: Facetas; failed: { market: string; error: string }[] };
+/**
+ * Mercado que nao respondeu. `blocked` separa "esta fora do ar agora" de
+ * "fechou a porta para consulta automatica" -- a segunda nao passa em alguns
+ * minutos, e dizer "tente de novo" seria mentira.
+ */
+type Falha = { market: string; error: string; blocked?: boolean };
+type Busca = { products: Product[]; total: number; facets: Facetas; failed: Falha[] };
 /** Estado do aquecimento do catalogo (o app enchendo as prateleiras). */
 type Aquecimento = { rodando: boolean; total: number; feitos: number; produtos: number; corredor: string | null };
 
@@ -86,7 +92,7 @@ export default function Market() {
   const [corredores, setCorredores] = useState<Corredor[]>([]);
   const [carregandoCorredores, setCarregandoCorredores] = useState(true);
   const [resultados, setResultados] = useState<Product[]>([]);
-  const [falhas, setFalhas] = useState<{ market: string; error: string }[]>([]);
+  const [falhas, setFalhas] = useState<Falha[]>([]);
   const [aberto, setAberto] = useState<string | null>(null);
   const [doCorredor, setDoCorredor] = useState<Product[]>([]);
   const [totalCorredor, setTotalCorredor] = useState(0);
@@ -146,8 +152,13 @@ export default function Market() {
     // O servidor comeca a encher o catalogo sozinho quando o banco e novo;
     // perguntar aqui faz a tela mostrar o progresso em vez de parecer vazia.
     void api
-      .get<{ warmup: Aquecimento }>('/catalog/warmup')
-      .then((d) => setAquecendo(d.warmup))
+      .get<{ warmup: Aquecimento; blocked?: Falha[] }>('/catalog/warmup')
+      // O aviso de mercado bloqueado tem de aparecer na tela cheia tambem, e
+      // nao so depois de uma busca: e ali que se estranha a falta dele.
+      .then((d) => {
+        setAquecendo(d.warmup);
+        if (d.blocked?.length) setFalhas(d.blocked);
+      })
       .catch(() => {});
   }, [recarregarCorredores]);
 
@@ -156,8 +167,9 @@ export default function Market() {
     if (!aquecendo?.rodando) return;
     const id = window.setInterval(async () => {
       try {
-        const d = await api.get<{ warmup: Aquecimento }>('/catalog/warmup');
+        const d = await api.get<{ warmup: Aquecimento; blocked?: Falha[] }>('/catalog/warmup');
         setAquecendo(d.warmup);
+        setFalhas(d.blocked ?? []);
         await recarregarCorredores();
       } catch {
         /* sem rede agora; a proxima volta tenta de novo */
@@ -355,6 +367,8 @@ export default function Market() {
   const vazio = !carregandoCorredores && corredores.length > 0 && corredores.every((c) => !c.total);
 
   const nomeDoMercado = (chave: string) => markets.find((m) => m.key === chave)?.label ?? chave;
+  const bloqueados = falhas.filter((f) => f.blocked).map((f) => f.market);
+  const caidos = falhas.filter((f) => !f.blocked).map((f) => f.market);
   const legendaDoTopo =
     destino === 'carrinho'
       ? 'adicionando no carrinho em andamento'
@@ -465,9 +479,25 @@ export default function Market() {
         )}
 
         {falhas.length > 0 && (
-          <div className="bg-accent/20 text-accent-foreground mt-3 flex items-center gap-2 rounded-lg px-3.5 py-2.5 text-sm font-medium">
-            <TriangleAlert className="size-4 shrink-0" />
-            Não deu para consultar {falhas.map((f) => f.market).join(', ')} agora. Os outros estão aí.
+          <div className="bg-accent/20 text-accent-foreground mt-3 flex items-start gap-2 rounded-lg px-3.5 py-2.5 text-sm font-medium">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+            <span>
+              {/* Duas frases diferentes de proposito. "Nao deu para consultar
+                  agora" convida a tentar de novo; com a rede bloqueando
+                  consulta automatica, tentar de novo nao resolve, e fingir que
+                  resolve e pior do que dizer a verdade. */}
+              {bloqueados.length > 0 && (
+                <>
+                  {bloqueados.map(nomeDoMercado).join(' e ')}{' '}
+                  {bloqueados.length === 1 ? 'está bloqueando' : 'estão bloqueando'} consultas automáticas — os preços
+                  {bloqueados.length === 1 ? ' dele' : ' deles'} não entram por enquanto.{' '}
+                </>
+              )}
+              {caidos.length > 0 && (
+                <>Não deu para consultar {caidos.map(nomeDoMercado).join(', ')} agora. </>
+              )}
+              Os outros estão aí.
+            </span>
           </div>
         )}
 

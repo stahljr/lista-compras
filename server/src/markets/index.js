@@ -45,16 +45,72 @@ export function marketInfo() {
 }
 
 /**
- * Roda a mesma operacao nos quatro mercados sem deixar que um mercado fora do
- * ar derrube a busca inteira: cada falha vira um aviso e a busca segue.
+ * Mercados que fecharam a porta, e ate quando parar de bater nela.
+ *
+ * Quando uma rede passa a responder com desafio anti-robo, insistir custa
+ * caro e nao traz nada: cada busca esperava o tempo dela para receber o mesmo
+ * 403, e uma rodada de aquecimento faz dezenas de buscas. Aqui ela sai de
+ * cena por um tempo -- as outras tres respondem no tempo delas -- e volta a
+ * ser tentada depois, porque bloqueio de Cloudflare costuma ser temporario e
+ * ninguem quer redeploy para reativar um mercado.
+ */
+const MINUTOS_DE_CASTIGO = Number(process.env.MARKET_BLOCK_MINUTES || 30);
+const bloqueados = new Map();
+
+/** Quem esta em castigo agora, com o motivo. Vai para a tela. */
+export function marketsBloqueados() {
+  const agora = Date.now();
+  const fora = [];
+  for (const [key, info] of bloqueados) {
+    if (info.ate <= agora) bloqueados.delete(key);
+    else fora.push({ market: key, error: info.motivo, blocked: true, until: new Date(info.ate).toISOString() });
+  }
+  return fora;
+}
+
+const emCastigo = (key) => {
+  const info = bloqueados.get(key);
+  if (!info) return null;
+  if (info.ate <= Date.now()) {
+    bloqueados.delete(key);
+    return null;
+  }
+  return info;
+};
+
+/**
+ * Roda a mesma consulta nos quatro mercados ao mesmo tempo. Um mercado fora
+ * do ar nao derruba os outros: cada um responde por si, e quem falhou volta
+ * na lista de falhas para a tela poder dizer o que faltou.
  */
 export async function acrossMarkets(fn, { markets = MARKETS } = {}) {
-  const settled = await Promise.allSettled(markets.map((m) => fn(m)));
   const results = [];
   const failed = [];
+
+  // Quem esta em castigo nem e consultado -- e ja entra como falha, para a
+  // tela nao confundir "nao perguntei" com "nao tem".
+  const alvos = [];
+  for (const m of markets) {
+    const castigo = emCastigo(m.key);
+    if (castigo) failed.push({ market: m.key, error: castigo.motivo, blocked: true });
+    else alvos.push(m);
+  }
+
+  const settled = await Promise.allSettled(alvos.map((m) => fn(m)));
   settled.forEach((r, i) => {
-    if (r.status === 'fulfilled') results.push({ market: markets[i], value: r.value });
-    else failed.push({ market: markets[i].key, error: String(r.reason?.message || r.reason) });
+    const mercado = alvos[i];
+    if (r.status === 'fulfilled') {
+      results.push({ market: mercado, value: r.value });
+      return;
+    }
+    const motivo = String(r.reason?.message || r.reason);
+    if (r.reason?.bloqueado) {
+      bloqueados.set(mercado.key, { motivo, ate: Date.now() + MINUTOS_DE_CASTIGO * 60000 });
+      console.warn(`[mercado] ${mercado.key} bloqueado; fora por ${MINUTOS_DE_CASTIGO} min -- ${motivo}`);
+      failed.push({ market: mercado.key, error: motivo, blocked: true });
+      return;
+    }
+    failed.push({ market: mercado.key, error: motivo });
   });
   return { results, failed };
 }

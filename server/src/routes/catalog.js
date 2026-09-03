@@ -21,7 +21,7 @@ import {
 } from '../catalog.js';
 import { facetar, filtrar } from '../facets.js';
 import { CATEGORIES, CATEGORY_BY_KEY } from '../categories.js';
-import { marketInfo } from '../markets/index.js';
+import { marketInfo, marketsBloqueados } from '../markets/index.js';
 import { requireAuth } from '../auth.js';
 import { warmupCatalog, warmupState, totalDoCatalogo } from '../warmup.js';
 
@@ -31,7 +31,11 @@ export const catalogRouter = express.Router();
 // casa -- precisa saber quem esta perguntando.
 catalogRouter.use(requireAuth);
 
-catalogRouter.get('/markets', (_req, res) => res.json({ markets: marketInfo() }));
+// `blocked` diz quais redes estao fora agora e por que. A tela precisa disso
+// para nao mostrar "o Condor nao tem nada" quando a verdade e "o Condor nao
+// deixou perguntar".
+catalogRouter.get('/markets', (_req, res) =>
+  res.json({ markets: marketInfo(), blocked: marketsBloqueados() }));
 
 /** A ordem pedida, se for uma das que existem. Nome errado cai no padrao. */
 const ordemDe = (req) => (ORDENS[String(req.query.sort || '')] ? String(req.query.sort) : null);
@@ -67,7 +71,9 @@ catalogRouter.get('/search', async (req, res, next) => {
       products: products.filter((p) => escolhidos.has(p.id)),
       total: escolhidos.size,
       facets,
-      failed,
+      // Junta o que falhou nesta busca com quem ja estava fora: a tela precisa
+      // saber de todos, nao so dos que foram tentados agora.
+      failed: [...failed, ...marketsBloqueados().filter((b) => !failed.some((f) => f.market === b.market))],
       cachedMarkets,
     });
   } catch (err) {
@@ -87,7 +93,7 @@ catalogRouter.post('/warmup', (req, res) => {
 
 catalogRouter.get('/warmup', async (_req, res, next) => {
   try {
-    res.json({ warmup: warmupState(), total: await totalDoCatalogo() });
+    res.json({ warmup: warmupState(), total: await totalDoCatalogo(), blocked: marketsBloqueados() });
   } catch (err) {
     next(err);
   }
