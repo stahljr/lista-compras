@@ -221,10 +221,12 @@ o liga de novo ao produto do catálogo local quando ele existe por lá.
 
 ### Fly.io — uma máquina com volume
 
-> Com `DATABASE_URL` apontando para um Postgres (a seção do Supabase acima), o
-> volume deixa de ser necessário: dá para pular o passo do disco e definir a
-> variável em vez dele. O passo a passo abaixo é de quando o banco era um
-> arquivo na máquina, e continua funcionando.
+> Este app rodou na Fly antes de ir para o Render, e o passo a passo abaixo
+> continua valendo. Duas ressalvas: com `DATABASE_URL` apontando para um
+> Postgres (a seção do Supabase acima) o volume deixa de ser necessário — dá
+> para pular o passo do disco e definir a variável em vez dele; e o workflow
+> que publicava pelo GitHub foi removido junto com a mudança para o Render (ele
+> está no histórico do git, se você quiser de volta).
 
 A Fly não tem deploy pelo site: o painel mostra o app, os logs, o volume e os
 segredos, mas quem publica é o `flyctl`, no terminal. A configuração abaixo é
@@ -331,26 +333,17 @@ git commit -m "Ajusta o nome do app na Fly"
 git push
 ```
 
-#### Publicando sem terminal, das próximas vezes
+#### Publicando as próximas vezes
 
-O repositório traz `.github/workflows/deploy.yml`. Com ele, o deploy vira um
-botão no GitHub. Configuração, uma vez:
+Da pasta do projeto:
 
 ```powershell
-fly tokens create deploy
+fly deploy --remote-only --ha=false
 ```
 
-Copie o token inteiro (começa com `FlyV1`). No GitHub, no repositório:
-**Settings → Secrets and variables → Actions → New repository secret**, nome
-`FLY_API_TOKEN`, valor o token. 
-
-Pronto. A partir daí:
-
-- **aba Actions → "Publicar na Fly" → "Run workflow"** publica na hora;
-- e qualquer alteração enviada para a branch publica sozinha.
-
 A imagem é construída nos servidores da Fly (`--remote-only`), então você não
-precisa de Docker em lugar nenhum.
+precisa de Docker em lugar nenhum. O `--ha=false` importa enquanto o banco for
+o volume da máquina — veja a nota acima.
 
 #### Depois de estar no ar
 
