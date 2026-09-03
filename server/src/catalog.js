@@ -201,7 +201,7 @@ export async function hidratarVarios(ids) {
  * onde cada produto ja carrega o preco de cada mercado que o tem.
  * O resultado por mercado fica em cache para nao bater nos sites a cada tecla.
  */
-export async function unifiedSearch(term, { limit = 24, fresh = false } = {}) {
+export async function unifiedSearch(term, { limit = 24, fresh = false, ordem = null } = {}) {
   const normalized = normalizeTerm(term);
   if (normalized.length < 2) return { products: [], failed: [], markets: [] };
 
@@ -259,7 +259,15 @@ export async function unifiedSearch(term, { limit = 24, fresh = false } = {}) {
     candidates.push({ product, match: Math.round(match * 20) / 20, best: entry.best, hits: entry.hits });
   }
   candidates.sort((a, b) => b.match - a.match || b.best - a.best || b.hits - a.hits);
-  const products = candidates.slice(0, limit).map((c) => c.product);
+  let products = candidates.map((c) => c.product);
+  // Ordem pedida a mao passa por cima da relevancia -- quem escolheu "menor
+  // preco" quer o menor preco, nao o mais relevante entre os baratos.
+  if (ORDENS[ordem]) {
+    const linhas = ordenar(products.map(linhaDeProduto), ordem);
+    const posicao = new Map(linhas.map((l, i) => [l.id, i]));
+    products = [...products].sort((a, b) => (posicao.get(a.id) ?? 0) - (posicao.get(b.id) ?? 0));
+  }
+  products = products.slice(0, limit);
 
   return { products, failed, cachedMarkets: usedCache };
 }
@@ -394,16 +402,53 @@ export const DIMENSOES_CORREDOR = ['sub', 'brand', 'size', 'market'];
 export const DIMENSOES_BUSCA = ['category', 'brand', 'size', 'market'];
 
 /** Transforma o produto hidratado no formato que o motor de filtros entende. */
-export const linhaDeProduto = (p) => ({
-  id: p.id,
-  name: p.name,
-  brand: p.brand,
-  category: p.category,
-  subcategory: p.subcategory,
-  size_label: p.sizeLabel,
-  size_value: p.sizeValue,
-  markets: p.offers.filter((o) => o.available && o.price > 0).map((o) => o.market),
-});
+export const linhaDeProduto = (p) => {
+  const validas = p.offers.filter((o) => o.available && o.price > 0);
+  return {
+    id: p.id,
+    name: p.name,
+    brand: p.brand,
+    category: p.category,
+    subcategory: p.subcategory,
+    size_label: p.sizeLabel,
+    size_value: p.sizeValue,
+    markets: validas.map((o) => o.market),
+    // O preco do produto, para ordenar, e o mais barato que se acha dele: e a
+    // resposta a "quanto me custa levar isto", que e a pergunta de quem
+    // ordena por preco.
+    preco: validas.length ? Math.min(...validas.map((o) => o.price)) : null,
+  };
+};
+
+/**
+ * As ordens em que uma prateleira pode aparecer.
+ *
+ * Trabalham sobre a "linha" do produto -- a mesma que os filtros usam -- e por
+ * isso servem tanto ao corredor (que ordena antes de hidratar, para nao
+ * carregar centenas de produtos a toa) quanto a busca e aos favoritos.
+ *
+ * Sem preco vai para o fim em qualquer ordem de preco: produto sem preco nao e
+ * o mais barato da prateleira, e no topo ele so atrapalharia.
+ */
+const semPreco = (r) => r.preco == null || r.preco <= 0;
+export const ORDENS = {
+  barato: (a, b) => (semPreco(a) ? 1 : semPreco(b) ? -1 : a.preco - b.preco),
+  caro: (a, b) => (semPreco(a) ? 1 : semPreco(b) ? -1 : b.preco - a.preco),
+  nome: (a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'),
+  mercados: (a, b) => (b.markets?.length ?? 0) - (a.markets?.length ?? 0) || ORDENS.nome(a, b),
+};
+
+/**
+ * Reordena a prateleira, se pediram. Sem `ordem`, cada tela mantem a sua
+ * ordem natural -- o corredor mostra primeiro o que esta em mais mercados, a
+ * busca mostra o que casa melhor com o que se digitou, e os favoritos vem na
+ * ordem em que foram marcados. Trocar isso por um padrao unico seria perder
+ * tres ordens boas para ganhar uma.
+ */
+export function ordenar(linhas, ordem) {
+  const regra = ORDENS[ordem];
+  return regra ? [...linhas].sort(regra) : linhas;
+}
 
 /**
  * O corredor com os filtros que afunilam: tipo, marca, tamanho e mercado.
@@ -412,12 +457,19 @@ export const linhaDeProduto = (p) => ({
  * precisam saem numa consulta, e o cruzamento e feito aqui -- fica mais simples
  * de ler do que oito SQLs, e e o mesmo motor que a busca usa.
  */
-export async function categoryView(category, { sub = null, brand = null, size = null, market = null, limit = 60, offset = 0 } = {}) {
+export async function categoryView(
+  category,
+  { sub = null, brand = null, size = null, market = null, ordem = null, limit = 60, offset = 0 } = {},
+) {
   const rows = (
     await db
       .prepare(
         `SELECT p.id, p.name, p.brand, p.subcategory, p.size_label, p.size_value,
                 COUNT(DISTINCT o.market) AS mercados,
+                -- Preco de ordenar e o mais barato *disponivel*, igual ao que o
+                -- cartao mostra. Sem o CASE, um produto em falta puxaria a
+                -- prateleira para cima com um preco que ninguem pode pagar.
+                MIN(CASE WHEN o.available = 1 THEN o.price END) AS preco,
                 string_agg(DISTINCT o.market, ',') AS lojas
            FROM products p
            JOIN offers o ON o.product_id = p.id AND o.price > 0
@@ -426,12 +478,15 @@ export async function categoryView(category, { sub = null, brand = null, size = 
           ORDER BY mercados DESC, p.name`,
       )
       .all(category)
-  ).map((r) => ({ ...r, markets: String(r.lojas || '').split(',').filter(Boolean) }));
+  ).map((r) => ({ ...r, preco: r.preco == null ? null : Number(r.preco), markets: String(r.lojas || '').split(',').filter(Boolean) }));
 
   const filtros = { sub, brand, size, market };
   const ctx = contextoDeFiltros(category);
   const facets = facetar(rows, filtros, DIMENSOES_CORREDOR, ctx);
-  const filtrados = filtrar(rows, filtros, DIMENSOES_CORREDOR);
+  // Ordenar depois de filtrar, e antes de paginar: a pagina 2 do "mais
+  // barato" tem de continuar a pagina 1, e nao reordenar um punhado de
+  // produtos ja escolhidos por outro critério.
+  const filtrados = ordenar(filtrar(rows, filtros, DIMENSOES_CORREDOR), ordem);
   const products = await hidratarVarios(filtrados.slice(offset, offset + limit).map((r) => r.id));
 
   return { products, total: filtrados.length, facets };
@@ -665,14 +720,15 @@ export async function favoriteIds(householdId) {
  * mercado e o que mais importa aqui: "do que eu sempre compro, o que este
  * mercado tem?" e a pergunta que se faz na porta da loja.
  */
-export async function favorites(householdId, { limit = 40, filtros = {} } = {}) {
+export async function favorites(householdId, { limit = 40, filtros = {}, ordem = null } = {}) {
   const todos = await hidratarVarios(await favoriteIds(householdId));
+  const porId = new Map(todos.map((p) => [p.id, p]));
   const rows = todos.map(linhaDeProduto);
   const ctx = contextoDeFiltros();
   const facets = facetar(rows, filtros, DIMENSOES_BUSCA, ctx);
-  const escolhidos = new Set(filtrar(rows, filtros, DIMENSOES_BUSCA).map((r) => r.id));
-  const products = todos.filter((p) => escolhidos.has(p.id)).slice(0, limit);
-  return { products, total: escolhidos.size, facets };
+  const escolhidas = ordenar(filtrar(rows, filtros, DIMENSOES_BUSCA), ordem);
+  const products = escolhidas.slice(0, limit).map((r) => porId.get(r.id));
+  return { products, total: escolhidas.length, facets };
 }
 
 /**

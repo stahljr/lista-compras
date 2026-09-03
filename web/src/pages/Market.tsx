@@ -14,7 +14,7 @@ import { ProductDialog } from '@/components/ProductDialog';
 import { Shelf } from '@/components/Shelf';
 import { Hero } from '@/components/Hero';
 import { Filtros as BarraDeFiltros, SEM_FILTRO, paraBusca, temFiltro } from '@/components/Filtros';
-import type { Facetas, Filtros } from '@/components/Filtros';
+import type { Facetas, Filtros, Ordem } from '@/components/Filtros';
 import type { Product, ShoppingList } from '@/lib/types';
 
 type Corredor = {
@@ -99,6 +99,10 @@ export default function Market() {
    * um estado so, que a faixa de cima mostra e as duas prateleiras herdam.
    */
   const [mercados, setMercados] = useState<string[]>([]);
+  // A ordem e por prateleira: no corredor "menor preco" e uma escolha que
+  // vale enquanto se olha aquele corredor; na busca, cada palavra recomeca.
+  const [ordem, setOrdem] = useState<Ordem>(null);
+  const [ordemBusca, setOrdemBusca] = useState<Ordem>(null);
   const [facetasBusca, setFacetasBusca] = useState<Facetas>({});
   const [filtrosBusca, setFiltrosBusca] = useState<Filtros>(SEM_FILTRO);
   const [totalBusca, setTotalBusca] = useState(0);
@@ -168,7 +172,8 @@ export default function Market() {
     setCarregando(true);
     try {
       const busca = new URLSearchParams({ limit: '60', offset: String(doCorredor.length), fill: '0' });
-      for (const [chave, valor] of Object.entries(filtros)) if (valor) busca.set(chave, String(valor));
+      for (const [chave, valor] of Object.entries(filtrosCorredor)) if (valor) busca.set(chave, String(valor));
+      if (ordem) busca.set('sort', ordem);
       const d = await api.get<{ products: Product[] }>(`/catalog/categories/${aberto}?${busca}`);
       setDoCorredor((atual) => [...atual, ...d.products]);
     } finally {
@@ -183,7 +188,7 @@ export default function Market() {
     setBuscandoMais(true);
     try {
       const r = await api.post<{ novos: number }>(`/catalog/categories/${aberto}/fill`, { termos: 4 });
-      await carregarCorredor(aberto, filtros);
+      await carregarCorredor(aberto, filtrosCorredor, ordem);
       void recarregarCorredores();
       notify(r.novos > 0 ? `${r.novos} produtos novos no corredor` : 'Nada novo por aqui desta vez');
     } catch (e) {
@@ -203,7 +208,7 @@ export default function Market() {
     }
   }
 
-  const buscar = useCallback(async (q: string, f: Filtros) => {
+  const buscar = useCallback(async (q: string, f: Filtros, o: Ordem) => {
     if (q.trim().length < 2) {
       setResultados([]);
       setFalhas([]);
@@ -214,7 +219,7 @@ export default function Market() {
     setCarregando(true);
     setErro('');
     try {
-      const extra = paraBusca(f);
+      const extra = paraBusca(f, o);
       const d = await api.get<Busca>(
         `/catalog/search?q=${encodeURIComponent(q)}&limit=40${extra ? `&${extra}` : ''}`,
       );
@@ -231,16 +236,17 @@ export default function Market() {
 
   useEffect(() => {
     window.clearTimeout(debounce.current);
-    debounce.current = window.setTimeout(() => void buscar(term, comMercado(filtrosBusca)), 450);
+    debounce.current = window.setTimeout(() => void buscar(term, comMercado(filtrosBusca), ordemBusca), 450);
     return () => window.clearTimeout(debounce.current);
     // `comMercado` e recriado a cada render; o que importa e o que ele carrega.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [term, filtrosBusca, mercados, buscar]);
+  }, [term, filtrosBusca, mercados, ordemBusca, buscar]);
 
   // Palavra nova comeca sem filtro: a marca da busca anterior nao vale para a
   // proxima, e deixa-la ligada esconderia o resultado sem explicacao.
   useEffect(() => {
     setFiltrosBusca(SEM_FILTRO);
+    setOrdemBusca(null);
   }, [term]);
 
   /**
@@ -249,11 +255,12 @@ export default function Market() {
    * cruzada com o que esta marcado.
    */
   const carregarCorredor = useCallback(
-    async (key: string, f: Filtros) => {
+    async (key: string, f: Filtros, o: Ordem = null) => {
       setCarregando(true);
       try {
         const busca = new URLSearchParams({ limit: '60' });
         for (const [chave, valor] of Object.entries(f)) if (valor) busca.set(chave, String(valor));
+        if (o) busca.set('sort', o);
         // O servidor enche o corredor buscando nos mercados quando ainda esta
         // vazio, entao esta chamada pode levar alguns segundos.
         const d = await api.get<{ products: Product[]; total: number; facets: Facetas }>(
@@ -276,7 +283,8 @@ export default function Market() {
     setFiltros(SEM_FILTRO);
     // Abrir corredor solta tipo, marca e tamanho -- mas nao o mercado: quem
     // escolheu o Angeloni na faixa quer o Angeloni em todo corredor que abrir.
-    await carregarCorredor(key, comMercado(SEM_FILTRO));
+    setOrdem(null);
+    await carregarCorredor(key, comMercado(SEM_FILTRO), null);
     void recarregarCorredores();
   }
 
@@ -290,17 +298,23 @@ export default function Market() {
     setMercados(proximosMercados);
     if (alvo === 'corredor') {
       setFiltros(resto);
-      if (aberto) void carregarCorredor(aberto, { ...resto, market: market || null });
+      if (aberto) void carregarCorredor(aberto, { ...resto, market: market || null }, ordem);
     } else {
       setFiltrosBusca(resto);
     }
+  }
+
+  /** Troca a ordem da prateleira aberta e recarrega com ela. */
+  function escolherOrdem(o: Ordem) {
+    setOrdem(o);
+    if (aberto) void carregarCorredor(aberto, filtrosCorredor, o);
   }
 
   /** Liga ou desliga um mercado na faixa de cima. */
   function alternarMercado(chave: string) {
     const proximos = mercados.includes(chave) ? mercados.filter((m) => m !== chave) : [...mercados, chave];
     setMercados(proximos);
-    if (aberto) void carregarCorredor(aberto, { ...filtros, market: proximos.join(',') || null });
+    if (aberto) void carregarCorredor(aberto, { ...filtros, market: proximos.join(',') || null }, ordem);
   }
 
   /** Com carrinho aberto o item vai direto pra ele; fora disso, para a lista. */
@@ -467,7 +481,9 @@ export default function Market() {
               filtros={filtrosDaBusca}
               total={totalBusca}
               dimensoes={['category', 'brand', 'size', 'market']}
+              ordem={ordemBusca}
               onChange={(f) => escolherFiltros(f, 'busca')}
+              onOrdem={setOrdemBusca}
             />
             {!resultados.length && !carregando ? (
               <EmptyState icon={<Search />} title="Nada encontrado">
@@ -503,7 +519,9 @@ export default function Market() {
               filtros={filtrosCorredor}
               total={totalCorredor}
               dimensoes={['sub', 'brand', 'size', 'market']}
+              ordem={ordem}
               onChange={(f) => escolherFiltros(f, 'corredor')}
+              onOrdem={escolherOrdem}
             />
             {carregando && !doCorredor.length ? (
               <>

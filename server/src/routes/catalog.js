@@ -17,6 +17,7 @@ import {
   favorites,
   favoriteIds,
   toggleFavorite,
+  ORDENS,
 } from '../catalog.js';
 import { facetar, filtrar } from '../facets.js';
 import { CATEGORIES, CATEGORY_BY_KEY } from '../categories.js';
@@ -32,6 +33,9 @@ catalogRouter.use(requireAuth);
 
 catalogRouter.get('/markets', (_req, res) => res.json({ markets: marketInfo() }));
 
+/** A ordem pedida, se for uma das que existem. Nome errado cai no padrao. */
+const ordemDe = (req) => (ORDENS[String(req.query.sort || '')] ? String(req.query.sort) : null);
+
 /**
  * Busca nos quatro mercados de uma vez e devolve o preco de cada um -- com os
  * mesmos filtros do corredor, porque quem busca "detergente" tambem quer
@@ -45,6 +49,7 @@ catalogRouter.get('/search', async (req, res, next) => {
     const { products, failed, cachedMarkets } = await unifiedSearch(term, {
       limit: Math.min(Number(req.query.limit) || 24, 40),
       fresh: req.query.fresh === '1',
+      ordem: ordemDe(req),
     });
 
     const filtros = {
@@ -100,6 +105,7 @@ catalogRouter.get('/favorites', async (req, res, next) => {
     const { products, total, facets } = await favorites(req.user.householdId, {
       limit: Math.min(Number(req.query.limit) || 40, 60),
       filtros,
+      ordem: ordemDe(req),
     });
     res.json({ products, total, facets, ids: products.map((p) => p.id) });
   } catch (err) {
@@ -151,6 +157,7 @@ catalogRouter.get('/categories/:key', async (req, res, next) => {
       brand: req.query.brand ? String(req.query.brand) : null,
       size: req.query.size ? String(req.query.size) : null,
       market: req.query.market ? String(req.query.market) : null,
+      ordem: ordemDe(req),
     };
     let view = await categoryView(key, filtros);
     // Corredor vazio (ou quase) busca nos mercados na hora, para nao mostrar

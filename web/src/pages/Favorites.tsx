@@ -7,7 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Banner, EmptyState, Page, SectionTitle, Topbar } from '@/components/Layout';
 import { ProductCard } from '@/components/ProductCard';
 import { ProductDialog } from '@/components/ProductDialog';
-import { Filtros as BarraDeFiltros, SEM_FILTRO, temFiltro, type Facetas, type Filtros } from '@/components/Filtros';
+import {
+  Filtros as BarraDeFiltros,
+  SEM_FILTRO,
+  temFiltro,
+  type Facetas,
+  type Filtros,
+  type Ordem,
+} from '@/components/Filtros';
 import type { Product, ShoppingList } from '@/lib/types';
 
 /**
@@ -24,23 +31,25 @@ export default function Favorites() {
   const [produtos, setProdutos] = useState<Product[] | null>(null);
   const [facetas, setFacetas] = useState<Facetas>({});
   const [filtros, setFiltros] = useState<Filtros>(SEM_FILTRO);
+  const [ordem, setOrdem] = useState<Ordem>(null);
   const [aberto, setAberto] = useState<Product | null>(null);
   const [added, setAdded] = useState<Record<number, boolean>>({});
   const [erro, setErro] = useState('');
 
   const destino = trip && trip.status === 'active' ? 'carrinho' : 'lista';
 
-  const carregar = useCallback(async (f: Filtros) => {
+  const carregar = useCallback(async (f: Filtros, o: Ordem) => {
     const busca = new URLSearchParams({ limit: '60' });
     for (const [chave, valor] of Object.entries(f)) if (valor) busca.set(chave, String(valor));
+    if (o) busca.set('sort', o);
     const d = await api.get<{ products: Product[]; facets: Facetas }>(`/catalog/favorites?${busca}`);
     setProdutos(d.products);
     setFacetas(d.facets ?? {});
   }, []);
 
   useEffect(() => {
-    void carregar(filtros).catch(() => setProdutos([]));
-  }, [carregar, filtros]);
+    void carregar(filtros, ordem).catch(() => setProdutos([]));
+  }, [carregar, filtros, ordem]);
 
   // Desfavoritar tira o produto da tela na hora: ele nao pertence mais aqui, e
   // deixa-lo ate a proxima carga faria o coracao parecer sem efeito.
@@ -126,7 +135,9 @@ export default function Favorites() {
             filtros={filtros}
             total={quantos}
             dimensoes={['category', 'brand', 'size', 'market']}
+            ordem={ordem}
             onChange={setFiltros}
+            onOrdem={setOrdem}
           />
         )}
 
