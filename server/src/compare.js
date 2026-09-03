@@ -8,7 +8,7 @@ const round = (n) => Math.round(n * 100) / 100;
  * ("papel toalha") nao tem produto vinculado; tenta-se achar o mais provavel
  * no catalogo ja conhecido, senao o item fica sem preco e e apenas listado.
  */
-async function priceItems(items, { refresh = true } = {}) {
+async function priceItems(items, { refresh = true, householdId = null } = {}) {
   const priced = [];
   const unpriced = [];
 
@@ -22,7 +22,7 @@ async function priceItems(items, { refresh = true } = {}) {
 
     const offers = (product?.offers || []).filter((o) => o.available && o.price > 0);
     if (!offers.length) {
-      const stats = await priceStats(matchKey({ name: item.name }));
+      const stats = householdId ? await priceStats(householdId, matchKey({ name: item.name })) : null;
       unpriced.push({
         id: item.id,
         name: item.name,
@@ -157,8 +157,8 @@ const sum = (items) => items.reduce((acc, i) => acc + i.subtotal, 0);
  * o melhor mercado unico e a melhor divisao em dois -- com a economia que a
  * divisao traz, para dar para decidir se vale a segunda parada.
  */
-export async function compareBasket(items, { refresh = true, minSplitSavings = 3 } = {}) {
-  const { priced, unpriced } = await priceItems(items, { refresh });
+export async function compareBasket(items, { refresh = true, minSplitSavings = 3, householdId = null } = {}) {
+  const { priced, unpriced } = await priceItems(items, { refresh, householdId });
   if (!priced.length) {
     return { itemCount: items.length, priced: [], unpriced, markets: [], best: null, split: null, worthSplitting: false };
   }

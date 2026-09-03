@@ -49,7 +49,7 @@ const mergeListIntoTrip = db.transaction(async (trip, list, market) => {
     // comprar aquele item ja foi tomada quando ele entrou na lista.
     const expected =
       priceFor(item, item.market || market) ??
-      (await priceStats(await historyKeyFor({ productId: item.product_id, name: item.name })))?.last ??
+      (await priceStats(trip.household_id, await historyKeyFor({ productId: item.product_id, name: item.name })))?.last ??
       null;
     const novo = await db
       .prepare(
@@ -476,10 +476,11 @@ tripsRouter.post('/:id/finish', async (req, res, next) => {
         if (item.picked && item.unit_price != null) {
           await db
             .prepare(
-              `INSERT INTO price_history (product_id, match_key, name, market, unit_price, trip_id)
-               VALUES (?, ?, ?, ?, ?, ?)`,
+              `INSERT INTO price_history (household_id, product_id, match_key, name, market, unit_price, trip_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
             )
             .run(
+              req.user.householdId,
               item.product_id,
               await historyKeyFor({ productId: item.product_id, name: item.name }),
               item.name,

@@ -9,15 +9,17 @@ import {
   clearSessionCookie,
   requireAuth,
 } from '../auth.js';
-import { members } from '../households.js';
+import { members, householdOf, householdPorConvite, novoConvite } from '../households.js';
 
 export const authRouter = express.Router();
 
 const PALETTE = ['#0ea5e9', '#ec4899', '#22c55e', '#f59e0b', '#8b5cf6'];
 
 /**
- * Cadastro. O primeiro cadastro cria a casa; do segundo em diante e preciso
- * o codigo de convite (INVITE_CODE), para o app nao ficar aberto na internet.
+ * Cadastro. O primeiro cadastro de todos cria a primeira casa e vira o
+ * administrador. Depois dele, ninguem entra sem um codigo de convite -- e e o
+ * codigo que decide em qual casa a pessoa cai. Assim a mae entra na casa dela,
+ * com a lista dela, sem ver a sua.
  */
 authRouter.post('/register', async (req, res) => {
   const name = String(req.body?.name || '').trim();
@@ -30,32 +32,35 @@ authRouter.post('/register', async (req, res) => {
   if (password.length < 8) return res.status(400).json({ error: 'a senha precisa ter ao menos 8 caracteres' });
 
   const userCount = (await db.prepare('SELECT COUNT(*) AS n FROM users').get()).n;
-  const expected = process.env.INVITE_CODE;
-  if (userCount > 0) {
-    if (!expected) return res.status(403).json({ error: 'cadastro fechado: defina INVITE_CODE no servidor' });
-    if (invite !== expected) return res.status(403).json({ error: 'codigo de convite invalido' });
+  const primeiro = userCount === 0;
+
+  let casa = null;
+  if (!primeiro) {
+    casa = await householdPorConvite(invite);
+    if (!casa) return res.status(403).json({ error: 'codigo de convite invalido' });
   }
 
   if (await db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) {
     return res.status(409).json({ error: 'este e-mail ja tem conta' });
   }
 
-  let householdId = (await db.prepare('SELECT id FROM households ORDER BY id LIMIT 1').get())?.id;
-  if (!householdId) {
-    householdId = (await db.prepare("INSERT INTO households (name) VALUES ('Casa') RETURNING id").get()).id;
+  if (!casa) {
+    casa = await db
+      .prepare("INSERT INTO households (name, invite_code) VALUES ('Nossa casa', ?) RETURNING *")
+      .get(novoConvite());
   }
 
   const passwordHash = await hashPassword(password);
   const novo = await db
     .prepare(
-      `INSERT INTO users (household_id, name, email, password_hash, color)
-       VALUES (?, ?, ?, ?, ?) RETURNING id`,
+      `INSERT INTO users (household_id, name, email, password_hash, color, is_admin)
+       VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
     )
-    .get(householdId, name, email, passwordHash, PALETTE[userCount % PALETTE.length]);
+    .get(casa.id, name, email, passwordHash, PALETTE[userCount % PALETTE.length], primeiro ? 1 : 0);
 
   const { token, expires } = await createSession(novo.id);
   setSessionCookie(res, token, expires);
-  res.json({ user: { id: novo.id, name, email, householdId } });
+  res.json({ user: { id: novo.id, name, email, householdId: casa.id, isAdmin: primeiro } });
 });
 
 authRouter.post('/login', async (req, res) => {
@@ -68,7 +73,16 @@ authRouter.post('/login', async (req, res) => {
 
   const { token, expires } = await createSession(user.id);
   setSessionCookie(res, token, expires);
-  res.json({ user: { id: user.id, name: user.name, email: user.email, color: user.color, householdId: user.household_id } });
+  res.json({
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      color: user.color,
+      householdId: user.household_id,
+      isAdmin: !!user.is_admin,
+    },
+  });
 });
 
 authRouter.post('/logout', async (req, res) => {
@@ -82,7 +96,11 @@ authRouter.get('/me', async (req, res) => {
     const { n } = await db.prepare('SELECT COUNT(*) AS n FROM users').get();
     return res.json({ user: null, needsSetup: n === 0 });
   }
-  res.json({ user: req.user, members: await members(req.user.householdId) });
+  res.json({
+    user: req.user,
+    members: await members(req.user.householdId),
+    household: await householdOf(req.user.householdId),
+  });
 });
 
 authRouter.post('/password', requireAuth, async (req, res) => {

@@ -8,9 +8,10 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Banner, Field, Page, Row, RowBody, RowMeta, RowName, SectionTitle, Topbar } from '@/components/Layout';
 import { Sheet } from '@/components/Sheet';
+import { Familias } from '@/components/Familias';
 
 export default function Profile() {
-  const { user, members, markets, logout, refreshLists } = useStore();
+  const { user, members, household, markets, logout, refreshLists } = useStore();
   const navigate = useNavigate();
   const [sheet, setSheet] = useState<'password' | null>(null);
   const [current, setCurrent] = useState('');
@@ -76,7 +77,7 @@ export default function Profile() {
 
   return (
     <>
-      <Topbar title="Perfil" subtitle={user?.email} />
+      <Topbar title="Perfil" subtitle={household ? `${household.name} · ${user?.email}` : user?.email} />
 
       <Page className="max-w-3xl">
         {message && (
@@ -90,7 +91,7 @@ export default function Profile() {
           </Banner>
         )}
 
-        <SectionTitle>Quem usa esta lista</SectionTitle>
+        <SectionTitle>{household ? household.name : 'Quem usa esta lista'}</SectionTitle>
         <Card className="overflow-hidden py-0">
           {members.map((m) => (
             <Row key={m.id}>
@@ -108,9 +109,12 @@ export default function Profile() {
           ))}
         </Card>
         <p className="text-muted-foreground mt-2 px-1 text-xs">
-          Para outra pessoa entrar, passe o código de convite definido em <code className="font-semibold">INVITE_CODE</code>{' '}
-          no servidor.
+          {user?.isAdmin
+            ? 'Para outra pessoa entrar nesta casa, passe o convite dela — está logo abaixo, em Famílias.'
+            : 'Para outra pessoa entrar nesta casa, peça o convite a quem administra o app.'}
         </p>
+
+        <Familias />
 
         <SectionTitle>Mercados consultados</SectionTitle>
         <Card className="overflow-hidden py-0">

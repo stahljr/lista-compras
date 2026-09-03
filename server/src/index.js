@@ -7,6 +7,7 @@ import { catalogRouter } from './routes/catalog.js';
 import { listsRouter } from './routes/lists.js';
 import { tripsRouter } from './routes/trips.js';
 import { backupRouter } from './routes/backup.js';
+import { householdsRouter } from './routes/households.js';
 import { subscribe } from './realtime.js';
 import { startRefresher } from './refresher.js';
 import { warmupOnBoot } from './warmup.js';
@@ -36,6 +37,7 @@ app.use('/api/catalog', catalogRouter);
 app.use('/api/lists', listsRouter);
 app.use('/api/trips', tripsRouter);
 app.use('/api/backup', backupRouter);
+app.use('/api/households', householdsRouter);
 
 /** Canal de sync: o outro celular avisa quando mexe no carrinho ou na compra. */
 app.get('/api/events', requireAuth, (req, res) => subscribe(req, res, req.user.householdId));

@@ -313,7 +313,10 @@ listsRouter.get('/:id/compare', async (req, res, next) => {
   try {
     const list = await resolveList(req);
     const items = await db.prepare('SELECT * FROM list_items WHERE list_id = ?').all(list.id);
-    const result = await compareBasket(items, { refresh: req.query.refresh !== '0' });
+    const result = await compareBasket(items, {
+      refresh: req.query.refresh !== '0',
+      householdId: req.user.householdId,
+    });
     // O comparador acabou de consultar os mercados: este e o preco que a pessoa
     // viu ao decidir, entao e ele que fica gravado para a compra usar.
     await refreshListSnapshots(list.id);

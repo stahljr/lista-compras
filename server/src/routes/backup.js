@@ -41,8 +41,7 @@ backupRouter.get("/", async (req, res, next) => {
         `
       SELECT h.match_key, h.name, h.market, h.unit_price, h.recorded_at
         FROM price_history h
-        JOIN trips t ON t.id = h.trip_id
-       WHERE t.household_id = ?
+       WHERE h.household_id = ?
        ORDER BY h.recorded_at
     `,
       )
@@ -110,8 +109,8 @@ const historicoIgual = db.prepare(
   "SELECT 1 FROM price_history WHERE match_key = ? AND recorded_at = ? AND unit_price = ?",
 );
 const inserirHistorico = db.prepare(`
-  INSERT INTO price_history (product_id, match_key, name, market, unit_price, recorded_at)
-  VALUES (?, ?, ?, ?, ?, ?)
+  INSERT INTO price_history (household_id, product_id, match_key, name, market, unit_price, recorded_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?)
 `);
 
 /**

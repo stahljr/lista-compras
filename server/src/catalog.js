@@ -626,14 +626,22 @@ export async function historyKeyFor({ productId, name }) {
   return matchKey({ name });
 }
 
-export function priceStats(key) {
+/**
+ * O que esta casa ja pagou por este produto. Por casa de proposito: "ja
+ * pagamos" e memoria da familia. Sem o recorte, o preco que uma casa pagou
+ * apareceria na tela da outra -- e isso e o inicio de contar o que a outra
+ * comprou.
+ */
+export function priceStats(householdId, key) {
   return db
     .prepare(
       `SELECT COUNT(*) AS times, AVG(unit_price) AS avg, MIN(unit_price) AS min, MAX(unit_price) AS max,
-              (SELECT unit_price FROM price_history WHERE match_key = ? ORDER BY recorded_at DESC LIMIT 1) AS last
-         FROM price_history WHERE match_key = ?`,
+              (SELECT unit_price FROM price_history
+                WHERE household_id = ? AND match_key = ?
+                ORDER BY recorded_at DESC LIMIT 1) AS last
+         FROM price_history WHERE household_id = ? AND match_key = ?`,
     )
-    .get(key, key);
+    .get(householdId, key, householdId, key);
 }
 
 export { classify };

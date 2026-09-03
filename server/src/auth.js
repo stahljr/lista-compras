@@ -52,7 +52,8 @@ export async function destroySession(token) {
 // sessao passaria a nao saber de que casa e o usuario.
 const selectSessionUser = () =>
   db.prepare(`
-    SELECT u.id, u.name, u.email, u.color, u.household_id AS "householdId"
+    SELECT u.id, u.name, u.email, u.color, u.household_id AS "householdId",
+           (u.is_admin = 1) AS "isAdmin"
       FROM sessions s
       JOIN users u ON u.id = s.user_id
      WHERE s.token = ? AND s.expires_at > datetime('now')

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { db } from './db.js';
 
 /**
@@ -42,3 +43,41 @@ export function members(householdId) {
   return db.prepare('SELECT id, name, color FROM users WHERE household_id = ? ORDER BY id').all(householdId);
 }
 
+export function householdOf(householdId) {
+  return db.prepare('SELECT id, name FROM households WHERE id = ?').get(householdId);
+}
+
+// Alfabeto sem os parecidos (I, l, O, 0, 1): o codigo vai ser lido em voz alta
+// ou digitado no celular de outra pessoa.
+const ALFABETO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+/** Codigo de convite novo, no formato XXXX-XXXX. */
+export function novoConvite() {
+  const bytes = crypto.randomBytes(8);
+  const letras = [...bytes].map((b) => ALFABETO[b % ALFABETO.length]);
+  return `${letras.slice(0, 4).join('')}-${letras.slice(4).join('')}`;
+}
+
+/** Compara convite digitado com o guardado, sem ligar para caixa nem espaco. */
+export const normalizaConvite = (codigo) => String(codigo || '').trim().toUpperCase().replace(/\s+/g, '');
+
+/**
+ * A casa a que este convite dá acesso. Aceita tambem o INVITE_CODE do
+ * servidor, que era o convite unico de antes das familias: quem ja tinha esse
+ * codigo continua entrando na primeira casa.
+ */
+export async function householdPorConvite(codigo) {
+  const alvo = normalizaConvite(codigo);
+  if (!alvo) return null;
+
+  const casa = await db
+    .prepare('SELECT * FROM households WHERE invite_code IS NOT NULL AND upper(invite_code) = ?')
+    .get(alvo);
+  if (casa) return casa;
+
+  const doServidor = normalizaConvite(process.env.INVITE_CODE);
+  if (doServidor && alvo === doServidor) {
+    return db.prepare('SELECT * FROM households ORDER BY id LIMIT 1').get();
+  }
+  return null;
+}

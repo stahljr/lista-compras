@@ -411,12 +411,28 @@ Com o endereço HTTPS em mãos, no celular: abra o link, menu do navegador →
 **Adicionar à tela de início**. No iPhone é pelo Safari (Compartilhar →
 Adicionar à Tela de Início); no Android, pelo Chrome.
 
-### As duas contas
+### As contas e as famílias
 
-O **primeiro** cadastro cria a casa e não pede código. A partir do segundo, é
-preciso o `INVITE_CODE` — é isso que impede que o app fique aberto para
-qualquer um. Passe o código para a outra pessoa e pronto: os dois compartilham
-a mesma lista e o mesmo carrinho.
+O **primeiro** cadastro cria a primeira casa, não pede código e vira o
+**administrador**. Do segundo em diante ninguém entra sem um convite — e é o
+convite que decide **em qual casa** a pessoa cai.
+
+Uma casa (família) é uma fronteira de dados: lista, carrinho, histórico e o
+"já pagamos" ficam dentro dela, e nenhuma tela atravessa essa linha. Vale para
+o administrador também: ele cria as casas e distribui convites, não enxerga as
+compras das outras.
+
+No Perfil → **Famílias**, quem administra pode:
+
+- criar uma casa nova (ela nasce com um convite pronto);
+- copiar o convite para passar a quem vai usar;
+- gerar um convite novo (o anterior deixa de valer na hora);
+- fechar a casa para novos cadastros;
+- apagar uma casa — só se estiver vazia, porque apagar uma casa com gente
+  dentro levaria as listas dessas pessoas junto.
+
+O `INVITE_CODE` do servidor continua valendo como convite da primeira casa,
+para quem já tinha esse código em mãos.
 
 ## Como os preços são obtidos
 

@@ -6,6 +6,10 @@ import { requireAuth } from '../auth.js';
 import { warmupCatalog, warmupState, totalDoCatalogo } from '../warmup.js';
 
 export const catalogRouter = express.Router();
+// O catalogo e do app, nao da internet: sem sessao nao se consulta preco nem
+// se dispara busca nos mercados. E o historico de precos, que sai daqui, e por
+// casa -- precisa saber quem esta perguntando.
+catalogRouter.use(requireAuth);
 
 catalogRouter.get('/markets', (_req, res) => res.json({ markets: marketInfo() }));
 
@@ -28,7 +32,7 @@ catalogRouter.get('/search', async (req, res, next) => {
  * Enche as prateleiras a pedido. Responde na hora e segue trabalhando: quem
  * pediu acompanha por GET, e a tela vai mostrando o que chega.
  */
-catalogRouter.post('/warmup', requireAuth, (req, res) => {
+catalogRouter.post('/warmup', (req, res) => {
   const estado = warmupState();
   if (!estado.rodando) void warmupCatalog({ porCategoria: Math.min(Number(req.body?.porCategoria) || 4, 8) });
   res.json({ warmup: warmupState() });
@@ -84,7 +88,7 @@ catalogRouter.get('/categories/:key', async (req, res, next) => {
 });
 
 /** Escolhe (ou solta) a foto que ilustra o corredor. */
-catalogRouter.patch('/categories/:key/cover', requireAuth, async (req, res, next) => {
+catalogRouter.patch('/categories/:key/cover', async (req, res, next) => {
   try {
     const key = req.params.key;
     if (!CATEGORY_BY_KEY.has(key)) return res.status(400).json({ error: 'categoria desconhecida' });
@@ -98,7 +102,7 @@ catalogRouter.patch('/categories/:key/cover', requireAuth, async (req, res, next
 });
 
 /** Corrige a categoria de um produto (e trava contra a reclassificacao). */
-catalogRouter.patch('/products/:id/category', requireAuth, async (req, res, next) => {
+catalogRouter.patch('/products/:id/category', async (req, res, next) => {
   try {
     const category = String(req.body?.category || '');
     if (!CATEGORY_BY_KEY.has(category)) return res.status(400).json({ error: 'categoria desconhecida' });
@@ -115,7 +119,7 @@ catalogRouter.get('/products/:id', async (req, res, next) => {
     const id = Number(req.params.id);
     const product = req.query.refresh === '1' ? await fillMissingOffers(id) : await hydrate(id);
     if (!product) return res.status(404).json({ error: 'produto nao encontrado' });
-    res.json({ product, history: await priceStats(product.matchKey) });
+    res.json({ product, history: await priceStats(req.user.householdId, product.matchKey) });
   } catch (err) {
     next(err);
   }

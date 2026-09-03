@@ -4,11 +4,23 @@ import { api } from './api';
 import { escoar, guardar, limparCache, pendentes, recuperar } from './offline';
 import type { Category, ListSummary, Market, Person, ShoppingList, Trip } from './types';
 
-type User = { id: number; name: string; email: string; color: string; householdId: number };
+type User = {
+  id: number;
+  name: string;
+  email: string;
+  color: string;
+  householdId: number;
+  /** O primeiro cadastro: e quem cria as familias e passa os convites. */
+  isAdmin?: boolean;
+};
+
+/** A casa (familia) a que esta sessao pertence. */
+export type Household = { id: number; name: string };
 
 type Store = {
   user: User | null;
   members: Person[];
+  household: Household | null;
   loading: boolean;
   needsSetup: boolean;
   general: ShoppingList | null;
@@ -39,6 +51,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // a lista e ver a tela de login.
   const [user, setUser] = useState<User | null>(() => recuperar<User>('user'));
   const [members, setMembers] = useState<Person[]>(() => recuperar<Person[]>('members') || []);
+  const [household, setHousehold] = useState<Household | null>(() => recuperar<Household>('household'));
   const [loading, setLoading] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
   const [general, setGeneralState] = useState<ShoppingList | null>(() => recuperar<ShoppingList>('general'));
@@ -110,13 +123,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let alive = true;
     api
-      .get<{ user: User | null; members?: Person[]; needsSetup?: boolean }>('/auth/me')
+      .get<{ user: User | null; members?: Person[]; household?: Household; needsSetup?: boolean }>('/auth/me')
       .then(async (data) => {
         if (!alive) return;
         setUser(data.user);
         guardar('user', data.user);
         setMembers(data.members || []);
         guardar('members', data.members || []);
+        setHousehold(data.household || null);
+        guardar('household', data.household || null);
         setNeedsSetup(!!data.needsSetup);
         if (data.user) {
           await escoar();
@@ -179,9 +194,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const { user: logged } = await api.post<{ user: User }>('/auth/login', { email, password });
       setUser(logged);
       guardar('user', logged);
-      const me = await api.get<{ members?: Person[] }>('/auth/me');
+      const me = await api.get<{ members?: Person[]; household?: Household }>('/auth/me');
       setMembers(me.members || []);
       guardar('members', me.members || []);
+      setHousehold(me.household || null);
+      guardar('household', me.household || null);
       await loadEverything();
     },
     [loadEverything],
@@ -212,6 +229,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       members,
+      household,
       loading,
       needsSetup,
       general,
@@ -234,7 +252,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setGeneral,
       setTrip,
     }),
-    [user, members, loading, needsSetup, general, lists, trip, markets, categories, online, pendingWrites, notePendingWrite, toast, notify, dismissToast, login, register, logout, refreshGeneral, refreshLists, refreshTrip, setGeneral, setTrip],
+    [user, members, household, loading, needsSetup, general, lists, trip, markets, categories, online, pendingWrites, notePendingWrite, toast, notify, dismissToast, login, register, logout, refreshGeneral, refreshLists, refreshTrip, setGeneral, setTrip],
   );
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
