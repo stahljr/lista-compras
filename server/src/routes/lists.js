@@ -2,7 +2,7 @@ import express from 'express';
 import { db } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { getGeneralList, assertListInHousehold } from '../households.js';
-import { hydrate } from '../catalog.js';
+import { hydrate, fillMissingOffers } from '../catalog.js';
 import { compareBasket } from '../compare.js';
 import { snapshotOf, writeSnapshot, readSnapshot, refreshListSnapshots } from '../snapshot.js';
 import { categoryOrder } from '../categories.js';
@@ -248,6 +248,37 @@ listsRouter.patch('/:id/items/:itemId', async (req, res, next) => {
         item.id,
       );
     }
+    await touch(list.id);
+    publish(req.user.householdId, list.kind === 'general' ? 'general' : 'lists', { listId: list.id });
+    res.json({ list: await listPayload(list) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Vai perguntar aos mercados quanto custa este item, e regrava a foto de preco.
+ *
+ * A folha "onde comprar" mostrava mercado sem preco, e nem o app sabia se
+ * aquilo era "nao vende" ou "nunca perguntei" -- para item sem codigo de
+ * barras (tudo o que se vende a peso) era sempre a segunda coisa. Este pedido
+ * faz a pergunta de verdade.
+ *
+ * A regravacao da foto tem de acontecer aqui: o preco que a lista mostra e o
+ * do momento em que o item entrou, e reconsultar o produto sem regravar
+ * deixaria a tela igual -- o botao pareceria nao ter feito nada.
+ */
+listsRouter.post('/:id/items/:itemId/precos', async (req, res, next) => {
+  try {
+    const list = await resolveList(req);
+    const item = await db
+      .prepare('SELECT * FROM list_items WHERE id = ? AND list_id = ?')
+      .get(Number(req.params.itemId), list.id);
+    if (!item) return res.status(404).json({ error: 'item nao encontrado' });
+    if (!item.product_id) return res.status(400).json({ error: 'item escrito a mao nao tem preco de mercado' });
+
+    await fillMissingOffers(item.product_id, { maxAgeMinutes: 0 });
+    await writeSnapshot(item.id, await snapshotOf(item.product_id));
     await touch(list.id);
     publish(req.user.householdId, list.kind === 'general' ? 'general' : 'lists', { listId: list.id });
     res.json({ list: await listPayload(list) });

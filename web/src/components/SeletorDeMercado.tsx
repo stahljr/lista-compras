@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Store, Tag } from 'lucide-react';
+import { Check, RefreshCw, Search, Store, Tag } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { money } from '@/lib/format';
@@ -22,6 +22,7 @@ export function SeletorDeMercado({
   precos,
   titulo,
   onChange,
+  onProcurar,
   className,
 }: {
   valor: string | null;
@@ -29,13 +30,17 @@ export function SeletorDeMercado({
   precos?: Record<string, number> | null;
   titulo?: string;
   onChange: (market: string | null) => void;
+  /** Manda o servidor consultar os mercados que ainda nao responderam. */
+  onProcurar?: () => Promise<void>;
   className?: string;
 }) {
   const { markets } = useStore();
   const [aberto, setAberto] = useState(false);
+  const [procurando, setProcurando] = useState(false);
   const escolhido = markets.find((m) => m.key === valor);
   const disponiveis = precos ? Object.entries(precos).filter(([, v]) => typeof v === 'number' && v > 0) : [];
   const barato = disponiveis.length ? Math.min(...disponiveis.map(([, v]) => v)) : null;
+  const faltando = markets.filter((m) => !precos?.[m.key]);
 
   return (
     <>
@@ -98,7 +103,12 @@ export function SeletorDeMercado({
                             {preco === barato && disponiveis.length > 1 ? ' · mais barato' : ''}
                           </span>
                         ) : (
-                          'não tem este item'
+                          /* Antes dizia "não tem este item", e isso afirmava
+                             uma coisa que o app nao sabe: mercado sem preco
+                             aqui pode ser mercado que nunca foi consultado --
+                             era o caso de todo produto sem codigo de barras.
+                             "Sem preco daqui" e o que se sabe de verdade. */
+                          'sem preço daqui'
                         )}
                       </RowMeta>
                     )}
@@ -108,6 +118,31 @@ export function SeletorDeMercado({
               );
             })}
           </div>
+
+          {/* Mercado sem preco pode ser mercado que nunca foi consultado. Este
+              botao manda o servidor ir perguntar -- por codigo de barras e,
+              quando nao ha um, pelo nome. E o que fecha o buraco em que caia
+              tudo o que se vende a peso. */}
+          {onProcurar && faltando.length > 0 && (
+            <button
+              type="button"
+              disabled={procurando}
+              onClick={async () => {
+                setProcurando(true);
+                try {
+                  await onProcurar();
+                } finally {
+                  setProcurando(false);
+                }
+              }}
+              className="hover:bg-muted mt-3 flex w-full items-center justify-center gap-2 rounded-lg border py-2.5 text-[13px] font-semibold disabled:opacity-60"
+            >
+              {procurando ? <RefreshCw className="size-4 animate-spin" /> : <Search className="size-4" />}
+              {procurando
+                ? 'Perguntando aos mercados…'
+                : `Procurar em ${faltando.length === 1 ? faltando[0].label : `${faltando.length} mercados`}`}
+            </button>
+          )}
         </Sheet>
       )}
     </>

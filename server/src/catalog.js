@@ -2,6 +2,7 @@ import { db, metaGet, metaSet } from './db.js';
 import { fold, classify, CATEGORIES, categoryLabel, categoryOrder } from './categories.js';
 import { termosDe } from './catalog-terms.js';
 import { subclassify, parseSize, facetar, filtrar } from './facets.js';
+import { assinaturaDe } from './unificar.js';
 import { MARKETS, MARKET_BY_KEY, acrossMarkets } from './markets/index.js';
 
 const SEARCH_TTL_MINUTES = Number(process.env.SEARCH_TTL_MINUTES || 360);
@@ -360,7 +361,7 @@ function rank(ranking, id, index) {
  */
 export async function fillMissingOffers(productId, { maxAgeMinutes = 720 } = {}) {
   const product = await q.productById.get(productId);
-  if (!product?.ean) return hydrate(productId);
+  if (!product) return null;
 
   const existing = await q.offersFor.all(productId);
   const stale = new Set();
@@ -375,9 +376,50 @@ export async function fillMissingOffers(productId, { maxAgeMinutes = 720 } = {})
   if (!stale.size) return hydrate(productId);
 
   const targets = MARKETS.filter((m) => stale.has(m.key));
-  const { results } = await acrossMarkets((m) => m.byEan(product.ean), { markets: targets });
-  const found = results.map((r) => r.value).filter(Boolean);
-  if (found.length) await saveMany(found);
+  const achados = [];
+
+  // Primeiro pelo codigo de barras, que e a identidade exata do produto.
+  if (product.ean) {
+    const { results } = await acrossMarkets((m) => m.byEan(product.ean), { markets: targets });
+    achados.push(...results.map((r) => r.value).filter(Boolean));
+  }
+
+  /**
+   * Depois pelo nome, nos mercados que continuaram sem responder.
+   *
+   * Isto faltava, e o preco disso era o app afirmar "nao tem este item" sobre
+   * mercado que nunca foi consultado. Duas situacoes caiam nesse buraco:
+   *
+   *   - produto sem EAN -- batata, pao, carne, tudo que se vende a peso. A
+   *     funcao desistia na primeira linha, e ali estao justamente os itens
+   *     que ele compra por quilo;
+   *   - EAN diferente para a mesma coisa entre redes. "Arroz Urbano 1kg
+   *     Parboilizado Saquinho" tem um codigo no Angeloni e outro no Condor,
+   *     entao a busca por codigo nao achava -- e o Condor era mais barato.
+   *
+   * O que impede isto de virar preco errado: a assinatura da unificacao. Um
+   * resultado so e aceito se marca, tamanho e as palavras do nome baterem com
+   * o produto que se procura. E o mesmo criterio que decide se dois produtos
+   * do catalogo sao um -- se e bom para juntar, e bom para comparar.
+   */
+  const jaTem = new Set(achados.map((a) => a.market.key));
+  const faltam = targets.filter((m) => !jaTem.has(m.key));
+  if (faltam.length) {
+    const nossa = assinaturaDe(product);
+    if (nossa) {
+      const { results } = await acrossMarkets((m) => m.search(product.name, 8), { markets: faltam });
+      for (const { value } of results) {
+        const igual = (value || []).find(
+          (candidato) =>
+            candidato.price > 0 &&
+            assinaturaDe({ name: candidato.name, brand: candidato.brand, size_label: null }) === nossa,
+        );
+        if (igual) achados.push(igual);
+      }
+    }
+  }
+
+  if (achados.length) await saveMany(achados);
   return hydrate(productId);
 }
 

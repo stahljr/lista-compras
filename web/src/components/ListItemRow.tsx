@@ -14,6 +14,7 @@ export function ListItemRow({
   onQty,
   onRemove,
   onMarket,
+  onProcurar,
   showWho = true,
 }: {
   item: ListItem;
@@ -21,6 +22,8 @@ export function ListItemRow({
   onRemove: () => void;
   /** Fixa (ou solta) o mercado onde este item deve ser comprado. */
   onMarket?: (market: string | null) => void;
+  /** Manda o servidor consultar os mercados que ainda nao deram preco deste item. */
+  onProcurar?: () => Promise<void>;
   showWho?: boolean;
 }) {
   // Item vendido a peso anda de meio em meio quilo; o resto, de um em um.
@@ -38,6 +41,7 @@ export function ListItemRow({
               precos={item.priceSnapshot}
               titulo={item.name}
               onChange={onMarket}
+              onProcurar={onProcurar}
             />
           )}
           {showWho && item.addedBy && (

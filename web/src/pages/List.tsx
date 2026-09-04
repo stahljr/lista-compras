@@ -87,6 +87,36 @@ export default function List() {
     }
   }
 
+  /**
+   * Vai perguntar aos mercados que ainda nao deram preco deste item.
+   *
+   * Existe porque a folha "onde comprar" mostrava mercado sem preco e o app
+   * nao tinha como saber se aquilo era "nao vende" ou "nunca perguntei" -- e
+   * para todo item sem codigo de barras, o que se vende a peso, era a segunda
+   * coisa. O servidor procura por codigo e, nao havendo, pelo nome.
+   */
+  async function procurarPrecos(item: ListItem) {
+    setError('');
+    const antes = Object.keys(item.priceSnapshot || {});
+    try {
+      const { list } = await api.post<{ list: ShoppingList }>(`/lists/geral/items/${item.id}/precos`);
+      setGeneral(list);
+      // Dizer o que aconteceu, e nao so "consultei". Quando a consulta nao acha
+      // nada, "nenhum outro mercado tem" e uma resposta -- "reconsultado" com a
+      // tela igual parece que o botao nao funcionou.
+      const agora = Object.keys(list.items.find((i) => i.id === item.id)?.priceSnapshot || {});
+      const novos = agora.filter((m) => !antes.includes(m));
+      const nomes = novos.map((m) => markets.find((k) => k.key === m)?.label ?? m);
+      notify(
+        novos.length
+          ? `Achamos em ${nomes.join(' e ')}`
+          : 'Perguntamos, e nenhum dos outros tem este produto',
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'não deu para consultar agora');
+    }
+  }
+
   function limparBusca() {
     setQuick('');
     setSugestoes([]);
@@ -273,6 +303,7 @@ export default function List() {
                       onMarket={(market) =>
                         act(api.patch<{ list: ShoppingList }>(`/lists/geral/items/${item.id}`, { market }))
                       }
+                      onProcurar={item.productId ? () => procurarPrecos(item) : undefined}
                     />
                   ))}
                 </Card>
