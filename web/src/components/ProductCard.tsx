@@ -40,7 +40,7 @@ export function ProductCard({
   onAdd: (qty: number, unit?: string) => void;
   onOpen?: () => void;
   added?: boolean;
-  /** Redes escolhidas na tela. Quando ha uma, e o preco dela que o cartao mostra. */
+  /** Redes escolhidas na tela. Havendo alguma, e o preco dela que o cartao mostra. */
   mercados?: string[];
 }) {
   const { favoritos, toggleFavorito } = useStore();
@@ -55,11 +55,9 @@ export function ProductCard({
   /**
    * Qual preco o cartao estampa.
    *
-   * Por padrao, o mais barato -- e `cheapest` ja vem do servidor sem deixar o
-   * atacado nem o preco velho ganharem essa posicao. Mas quem escolheu onde
-   * vai comprar quer o preco de lá: "só Angeloni" tem de mostrar o Angeloni,
-   * e nao o Condor com um "+3" do lado. Era isso que fazia a tela do atacado
-   * estampar o preco do Condor -- a escolha da pessoa perdia da regra geral.
+   * Por padrao, o mais barato. Mas quem escolheu onde vai comprar quer o preco
+   * de lá: com "só Angeloni" ligado, o cartao estampava o Condor com um "+3"
+   * do lado -- a regra geral ganhava da escolha da pessoa.
    */
   const daEscolhida = mercados?.length
     ? product.offers
@@ -149,7 +147,6 @@ export function ProductCard({
               </p>
               <p className="text-muted-foreground text-[11.5px] font-semibold">
                 {melhor.marketLabel}
-                {melhor.wholesale && <span className="text-muted-foreground/70 font-normal"> · fardo</span>}
                 {outros > 0 && <span className="text-muted-foreground/70 font-normal"> · +{outros}</span>}
                 {/* Preco velho tem de dizer de quando e. Sem isto o cartao
                     apresenta o preco de duas semanas atras com a mesma cara do

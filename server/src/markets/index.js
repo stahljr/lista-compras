@@ -28,26 +28,6 @@ export const MARKETS = [
     site: 'https://www.supermuffato.com.br',
     host: process.env.MUFFATO_HOST || 'www.supermuffato.com.br',
   }),
-  /**
-   * O atacado, que e outro tipo de compra: fardo em vez de unidade, preco por
-   * volume. Fica marcado como `wholesale` e por isso so entra na tela quando
-   * alguem o escolhe -- misturado no corredor ele bagunçaria a comparacao,
-   * porque R$ 30 de um fardo de doze nao se compara com R$ 3 de uma unidade.
-   *
-   * O Atacadao cobra preco por regiao, entao vai com um CEP: a consulta
-   * pergunta "quanto custa aqui" em vez de aceitar o preco de outro estado.
-   * ATACADAO_CEP troca a referencia sem mexer no codigo.
-   */
-  createVtexMarket({
-    key: 'atacadao',
-    label: 'Atacadão',
-    color: '#1d4ed8',
-    site: 'https://www.atacadao.com.br',
-    host: process.env.ATACADAO_HOST || 'www.atacadao.com.br',
-    cep: process.env.ATACADAO_CEP || '80010-010',
-    salesChannel: process.env.ATACADAO_SC || '2',
-    wholesale: true,
-  }),
   createCondorMarket({
     key: 'condor',
     label: 'Condor',
@@ -61,12 +41,8 @@ export const MARKETS = [
 export const MARKET_BY_KEY = new Map(MARKETS.map((m) => [m.key, m]));
 
 export function marketInfo() {
-  return MARKETS.map(({ key, label, color, site, wholesale }) => ({ key, label, color, site, wholesale: !!wholesale }));
+  return MARKETS.map(({ key, label, color, site }) => ({ key, label, color, site }));
 }
-
-/** As redes de varejo -- o que a tela mostra quando ninguem escolheu nada. */
-export const MERCADOS_VAREJO = MARKETS.filter((m) => !m.wholesale).map((m) => m.key);
-export const ehAtacado = (key) => !!MARKET_BY_KEY.get(key)?.wholesale;
 
 /**
  * Mercados que fecharam a porta, e ate quando parar de bater nela.

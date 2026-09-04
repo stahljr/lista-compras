@@ -1,5 +1,4 @@
-/** `wholesale` marca atacado: fardo em vez de unidade, e por isso separado. */
-export type Market = { key: string; label: string; color: string; site: string; wholesale?: boolean };
+export type Market = { key: string; label: string; color: string; site: string };
 
 export type Offer = {
   market: string;
@@ -12,8 +11,6 @@ export type Offer = {
   updatedAt: string;
   /** Preço com idade de merecer aviso. Quem decide é o servidor. */
   stale?: boolean;
-  /** Preço de atacado: não se compara com unidade sem dizer que é fardo. */
-  wholesale?: boolean;
 };
 
 export type Product = {

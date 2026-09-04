@@ -21,7 +21,7 @@ import {
 } from '../catalog.js';
 import { facetar, filtrar } from '../facets.js';
 import { CATEGORIES, CATEGORY_BY_KEY } from '../categories.js';
-import { marketInfo, marketsBloqueados, MERCADOS_VAREJO } from '../markets/index.js';
+import { marketInfo, marketsBloqueados } from '../markets/index.js';
 import { requireAuth } from '../auth.js';
 import { warmupCatalog, warmupState, totalDoCatalogo } from '../warmup.js';
 
@@ -50,20 +50,17 @@ catalogRouter.get('/search', async (req, res, next) => {
   try {
     const term = String(req.query.q || '');
     if (term.trim().length < 2) return res.json({ products: [], total: 0, failed: [], facets: {} });
-    const redesPedidas = String(req.query.market || '').split(',').filter(Boolean);
     const { products, failed, cachedMarkets } = await unifiedSearch(term, {
       limit: Math.min(Number(req.query.limit) || 24, 40),
       fresh: req.query.fresh === '1',
       ordem: ordemDe(req),
-      mercados: redesPedidas,
     });
 
     const filtros = {
       category: req.query.category ? String(req.query.category) : null,
       brand: req.query.brand ? String(req.query.brand) : null,
       size: req.query.size ? String(req.query.size) : null,
-      // Sem escolha, a busca fala de varejo -- igual ao corredor.
-      market: req.query.market ? String(req.query.market) : MERCADOS_VAREJO.join(','),
+      market: req.query.market ? String(req.query.market) : null,
     };
     const rows = products.map(linhaDeProduto);
     const ctx = contextoDeFiltros();
@@ -111,7 +108,6 @@ catalogRouter.get('/favorites', async (req, res, next) => {
     if (req.query.ids === '1') return res.json({ ids: await favoriteIds(req.user.householdId) });
     const filtros = {};
     for (const dim of ['category', 'brand', 'size', 'market']) if (req.query[dim]) filtros[dim] = String(req.query[dim]);
-    if (!filtros.market) filtros.market = MERCADOS_VAREJO.join(',');
     const { products, total, facets } = await favorites(req.user.householdId, {
       limit: Math.min(Number(req.query.limit) || 40, 60),
       filtros,
