@@ -11,6 +11,7 @@ import {
   Filtros as BarraDeFiltros,
   SEM_FILTRO,
   temFiltro,
+  valores,
   type Facetas,
   type Filtros,
   type Ordem,
@@ -156,6 +157,7 @@ export default function Favorites() {
               {produtos!.map((p) => (
                 <ProductCard
                   key={p.id}
+                  mercados={valores(filtros.market)}
                   product={p}
                   added={added[p.id]}
                   onAdd={(q, u) => void add(p, q, u)}

@@ -2,7 +2,7 @@ import { db, metaGet, metaSet } from './db.js';
 import { fold, classify, CATEGORIES, categoryLabel, categoryOrder } from './categories.js';
 import { termosDe } from './catalog-terms.js';
 import { subclassify, parseSize, facetar, filtrar } from './facets.js';
-import { MARKETS, MARKET_BY_KEY, acrossMarkets } from './markets/index.js';
+import { MARKETS, MARKET_BY_KEY, MERCADOS_VAREJO, acrossMarkets } from './markets/index.js';
 
 const SEARCH_TTL_MINUTES = Number(process.env.SEARCH_TTL_MINUTES || 360);
 
@@ -167,9 +167,19 @@ function montar(product, rows) {
       // o comparador e para a estimativa da compra. Duas implementacoes da
       // mesma regra acabariam discordando.
       stale: precoEnvelhecido(o.updated_at),
+      wholesale: !!MARKET_BY_KEY.get(o.market)?.wholesale,
     }));
   const withStock = offers.filter((o) => o.available);
-  const frescas = withStock.filter((o) => !o.stale);
+  /**
+   * Atacado fica fora do "mais barato".
+   *
+   * R$ 30 de um fardo de doze e mais barato que R$ 3 de uma unidade em
+   * numero absoluto, e nada mais. Deixar o atacado disputar essa posicao
+   * mandaria a compra para la por uma comparacao que nao existe -- e o selo
+   * de economia sairia calculado contra o fardo.
+   */
+  const varejo = withStock.filter((o) => !o.wholesale);
+  const frescas = (varejo.length ? varejo : withStock).filter((o) => !o.stale);
   /**
    * O "mais barato" prefere preco fresco.
    *
@@ -180,7 +190,7 @@ function montar(product, rows) {
    * velho so vira o mais barato quando nao ha nenhum fresco: ai e a unica
    * informacao que temos, e a tela diz de quando e.
    */
-  const cheapest = frescas[0] || withStock[0] || offers[0] || null;
+  const cheapest = frescas[0] || varejo[0] || withStock[0] || offers[0] || null;
   return {
     id: product.id,
     ean: product.ean,
@@ -232,7 +242,7 @@ export async function hidratarVarios(ids) {
  * onde cada produto ja carrega o preco de cada mercado que o tem.
  * O resultado por mercado fica em cache para nao bater nos sites a cada tecla.
  */
-export async function unifiedSearch(term, { limit = 24, fresh = false, ordem = null } = {}) {
+export async function unifiedSearch(term, { limit = 24, fresh = false, ordem = null, mercados = [] } = {}) {
   const normalized = normalizeTerm(term);
   if (normalized.length < 2) return { products: [], failed: [], markets: [] };
 
@@ -241,8 +251,17 @@ export async function unifiedSearch(term, { limit = 24, fresh = false, ordem = n
   const failed = [];
   const usedCache = [];
 
+  /**
+   * Quais redes consultar. Sem escolha, so o varejo: o atacado e uma resposta
+   * a outra pergunta ("vale a pena levar fardo?"), e consultar quem nao foi
+   * chamado custa uma requisicao e enche o cache de coisa que nao vai aparecer.
+   */
+  const redes = mercados?.length
+    ? MARKETS.filter((m) => mercados.includes(m.key))
+    : MARKETS.filter((m) => !m.wholesale);
+
   const pending = [];
-  for (const market of MARKETS) {
+  for (const market of redes) {
     const cached = fresh ? null : await q.readCache.get(market.key, normalized, ttl);
     if (cached) {
       usedCache.push(market.key);
@@ -403,8 +422,10 @@ function listaDeMercados(mercados) {
   const chaves = (Array.isArray(mercados) ? mercados : String(mercados || '').split(','))
     .map((m) => String(m).trim())
     .filter((m) => MARKET_BY_KEY.has(m));
-  if (!chaves.length) return { clausula: '', args: [] };
-  return { clausula: `AND o.market IN (${chaves.map(() => '?').join(', ')})`, args: chaves };
+  // Ninguem escolheu: fala de varejo. Antes isto significava "todos", e com um
+  // atacado no time isso encheria o corredor de fardo sem ninguem ter pedido.
+  const alvos = chaves.length ? chaves : MERCADOS_VAREJO;
+  return { clausula: `AND o.market IN (${alvos.map(() => '?').join(', ')})`, args: alvos };
 }
 
 /**
@@ -517,7 +538,8 @@ export async function categoryView(
       .all(category)
   ).map((r) => ({ ...r, preco: r.preco == null ? null : Number(r.preco), markets: String(r.lojas || '').split(',').filter(Boolean) }));
 
-  const filtros = { sub, brand, size, market };
+  // O mesmo criterio do SQL, agora no motor de filtros: sem escolha, varejo.
+  const filtros = { sub, brand, size, market: market || MERCADOS_VAREJO.join(',') };
   const ctx = contextoDeFiltros(category);
   const facets = facetar(rows, filtros, DIMENSOES_CORREDOR, ctx);
   // Ordenar depois de filtrar, e antes de paginar: a pagina 2 do "mais
@@ -758,6 +780,8 @@ export async function favoriteIds(householdId) {
  * mercado tem?" e a pergunta que se faz na porta da loja.
  */
 export async function favorites(householdId, { limit = 40, filtros = {}, ordem = null } = {}) {
+  const comVarejo = { ...filtros, market: filtros.market || MERCADOS_VAREJO.join(',') };
+  filtros = comVarejo;
   const todos = await hidratarVarios(await favoriteIds(householdId));
   const porId = new Map(todos.map((p) => [p.id, p]));
   const rows = todos.map(linhaDeProduto);

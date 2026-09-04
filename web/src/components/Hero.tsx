@@ -65,6 +65,14 @@ export function Hero({
                   <span className="size-2 rounded-full" style={{ background: m.color }} />
                 )}
                 {m.label}
+                {/* O atacado nao e um mercado a mais, e outro tipo de compra:
+                    fardo em vez de unidade. Dizer isso na propria etiqueta
+                    evita a comparacao errada antes de ela acontecer. */}
+                {m.wholesale && (
+                  <span className={cn('text-[9px] font-bold tracking-wide uppercase', ligado ? 'text-blue-900/60' : 'opacity-70')}>
+                    atacado
+                  </span>
+                )}
               </button>
             );
           })}

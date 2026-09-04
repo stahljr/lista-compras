@@ -25,7 +25,10 @@ export function PriceTags({ offers, limit }: { offers: Offer[]; limit?: number }
               velho && 'border-dashed opacity-70',
             )}
           >
-            <span className="text-muted-foreground">{o.marketLabel}</span>
+            <span className="text-muted-foreground">
+              {o.marketLabel}
+              {o.wholesale && <span className="ml-0.5 text-[9px] font-bold uppercase opacity-70">atac.</span>}
+            </span>
             <span className={cn('font-bold tabular-nums', velho && 'font-semibold')}>{money(o.price)}</span>
             {velho && <span className="text-muted-foreground/80 font-medium">de {diaEMes(o.updatedAt)}</span>}
           </span>

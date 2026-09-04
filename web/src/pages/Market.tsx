@@ -555,7 +555,7 @@ export default function Market() {
             ) : (
               <div className={grade}>
                 {resultados.map((p) => (
-                  <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q, u) => void add(p, q, u)} onOpen={() => setAberto2(p)} />
+                  <ProductCard key={p.id} mercados={mercados} product={p} added={added[p.id]} onAdd={(q, u) => void add(p, q, u)} onOpen={() => setAberto2(p)} />
                 ))}
               </div>
             )}
@@ -603,7 +603,7 @@ export default function Market() {
               <>
                 <div className={grade}>
                   {doCorredor.map((p) => (
-                    <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q, u) => void add(p, q, u)} onOpen={() => setAberto2(p)} />
+                    <ProductCard key={p.id} mercados={mercados} product={p} added={added[p.id]} onAdd={(q, u) => void add(p, q, u)} onOpen={() => setAberto2(p)} />
                   ))}
                 </div>
 
@@ -638,7 +638,7 @@ export default function Market() {
               {favoritados
                 .filter((p) => favoritos.includes(p.id))
                 .map((p) => (
-                  <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q, u) => void add(p, q, u)} onOpen={() => setAberto2(p)} />
+                  <ProductCard key={p.id} mercados={mercados} product={p} added={added[p.id]} onAdd={(q, u) => void add(p, q, u)} onOpen={() => setAberto2(p)} />
                 ))}
             </Shelf>
           </div>
@@ -680,7 +680,7 @@ export default function Market() {
                   </SectionTitle>
                   <Shelf>
                     {c.products.map((p) => (
-                      <ProductCard key={p.id} product={p} added={added[p.id]} onAdd={(q, u) => void add(p, q, u)} onOpen={() => setAberto2(p)} />
+                      <ProductCard key={p.id} mercados={mercados} product={p} added={added[p.id]} onAdd={(q, u) => void add(p, q, u)} onOpen={() => setAberto2(p)} />
                     ))}
                   </Shelf>
                 </div>
