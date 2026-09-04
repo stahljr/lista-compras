@@ -89,7 +89,9 @@ backupRouter.get("/", async (req, res, next) => {
   }
 });
 
-const acharProduto = db.prepare("SELECT id FROM products WHERE match_key = ?");
+// COALESCE porque a chave pode pertencer a um produto que foi reconhecido
+// como repeticao de outro: o item restaurado tem de apontar para o que ficou.
+const acharProduto = db.prepare('SELECT COALESCE(merged_into, id) AS id FROM products WHERE match_key = ?');
 const acharLista = db.prepare(
   "SELECT * FROM lists WHERE household_id = ? AND kind = 'quick' AND archived = 0 AND lower(name) = lower(?)",
 );

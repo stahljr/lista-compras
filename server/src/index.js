@@ -14,6 +14,7 @@ import { warmupOnBoot } from './warmup.js';
 import { semanteNoBoot } from './semente.js';
 import { sondarNoBoot } from './saude.js';
 import { ensureClassifierFresh } from './catalog.js';
+import { garantirUnificado } from './unificar.js';
 import { migrate } from './db.js';
 
 // O banco vem antes de tudo: sem esquema no ar, nao ha login nem lista. Se o
@@ -74,6 +75,22 @@ const reclass = await ensureClassifierFresh();
 if (reclass) console.log(`[categorias] ${reclass.mudados} de ${reclass.total} produtos reclassificados`);
 
 startRefresher();
+/**
+ * Junta o produto repetido -- o mesmo arroz que entrou duas vezes porque um
+ * mercado nao publica codigo de barras. Roda uma vez por versao da regra.
+ *
+ * Depois do listen, e nao antes: e uma varredura do catalogo mais uma
+ * transacao por uniao, e contra um Postgres na rede isso custa segundos. A
+ * primeira carga mostrar o duplicado por um instante e melhor do que o health
+ * check da hospedagem reprovar o deploy -- foi a licao da semente.
+ */
+setTimeout(() => {
+  void garantirUnificado()
+    .then((r) => {
+      if (r) console.log(`[unificar] ${r.unioes.length} de ${r.produtos} produtos eram repeticao`);
+    })
+    .catch((err) => console.warn(`[unificar] nao rodou: ${err.message}`));
+}, 6000).unref?.();
 // O Condor fechou a porta para consulta automatica, e sem isto um banco novo
 // nasce com zero produto dele. Nao sobrescreve nada: so entra onde ele nao
 // tem oferta nenhuma. Roda depois do listen -- sao centenas de gravacoes.

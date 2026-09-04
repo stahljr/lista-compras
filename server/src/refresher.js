@@ -1,5 +1,6 @@
 import { db } from './db.js';
 import { fillMissingOffers } from './catalog.js';
+import { unificarCatalogo } from './unificar.js';
 
 /**
  * Preco de mercado muda de um dia para o outro, e o comparador so serve se o
@@ -35,7 +36,25 @@ export function startRefresher() {
     console.log(`[precos] ${atualizados} de ${rows.length} produtos das listas reconsultados`);
   }
 
+  /**
+   * Junta o repetido que apareceu desde a ultima vez.
+   *
+   * A uniao de boot roda uma vez por versao da regra, e isso deixava um furo:
+   * mercado que devolve o mesmo produto com o nome escrito de outro jeito cria
+   * um produto novo, que ninguem mais junta. Cada volta do refresher passa o
+   * pente -- so o que ainda esta visivel, entao a passada e barata quando nao
+   * ha nada para juntar.
+   */
+  async function unir() {
+    try {
+      const r = await unificarCatalogo();
+      if (r.unioes.length) console.log(`[unificar] ${r.unioes.length} repeticoes novas juntadas`);
+    } catch (err) {
+      console.warn(`[unificar] a passada periodica falhou: ${err.message}`);
+    }
+  }
+
   // Um atraso na largada para nao competir com o boot do servidor.
-  setTimeout(() => void run(), 30_000).unref();
-  setInterval(() => void run(), hours * 3600 * 1000).unref();
+  setTimeout(() => void run().then(unir), 30_000).unref();
+  setInterval(() => void run().then(unir), hours * 3600 * 1000).unref();
 }

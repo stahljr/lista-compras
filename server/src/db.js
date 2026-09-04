@@ -273,6 +273,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
 CREATE INDEX IF NOT EXISTS idx_products_sub ON products(category, subcategory);
+-- Toda leitura de catalogo filtra por merged_into IS NULL.
+CREATE INDEX IF NOT EXISTS idx_products_fundido ON products(merged_into);
 CREATE INDEX IF NOT EXISTS idx_offers_product ON offers(product_id);
 CREATE INDEX IF NOT EXISTS idx_offers_market ON offers(market);
 CREATE INDEX IF NOT EXISTS idx_lists_household ON lists(household_id, kind);
@@ -292,6 +294,10 @@ const COLUNAS_NOVAS = `
 ALTER TABLE households ADD COLUMN IF NOT EXISTS invite_code TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE price_history ADD COLUMN IF NOT EXISTS household_id INTEGER;
+-- Produto que foi reconhecido como repeticao de outro aponta para o que ficou.
+-- E ponteiro, nao exclusao: nada que referencie o id antigo quebra, nenhum
+-- preco se perde, e desfazer uma uniao errada e limpar esta coluna.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS merged_into INTEGER REFERENCES products(id) ON DELETE SET NULL;
 `;
 
 // Nomes antigos, de quando o "carrinho" era uma lista -- antes de o carrinho

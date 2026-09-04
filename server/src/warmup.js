@@ -26,7 +26,7 @@ async function comPreco(categoria) {
     .prepare(
       `SELECT COUNT(*) AS n FROM products p
          JOIN offers o ON o.product_id = p.id AND o.price > 0
-        WHERE p.category = ?`,
+        WHERE p.merged_into IS NULL AND p.category = ?`,
     )
     .get(categoria);
   return n;
@@ -34,7 +34,7 @@ async function comPreco(categoria) {
 
 export async function totalDoCatalogo() {
   const { n } = await db
-    .prepare('SELECT COUNT(DISTINCT p.id) AS n FROM products p JOIN offers o ON o.product_id = p.id AND o.price > 0')
+    .prepare('SELECT COUNT(DISTINCT p.id) AS n FROM products p JOIN offers o ON o.product_id = p.id AND o.price > 0 WHERE p.merged_into IS NULL')
     .get();
   return n;
 }

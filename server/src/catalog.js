@@ -101,6 +101,14 @@ async function refreshDerived(product) {
 export const saveOffer = db.transaction(async (item) => {
   const key = matchKey(item);
   let product = await q.productByKey.get(key);
+  // A chave achou um produto que ja foi reconhecido como repeticao: a oferta
+  // pertence ao que ficou. Sem isto, a proxima consulta ao mercado ressuscita
+  // o duplicado -- ele volta com oferta e reaparece na tela.
+  for (let salto = 0; product?.merged_into && salto < 5; salto++) {
+    const alvo = await q.productById.get(product.merged_into);
+    if (!alvo) break;
+    product = alvo;
+  }
   if (!product) {
     const novo = await q.insertProduct.get({
       ean: item.ean || null,
@@ -201,9 +209,23 @@ function montar(product, rows) {
 }
 
 export async function hydrate(productId) {
-  const product = await q.productById.get(productId);
+  let product = await q.productById.get(productId);
   if (!product) return null;
-  return montar(product, await q.offersFor.all(productId));
+  /**
+   * Segue o ponteiro da uniao.
+   *
+   * Uma lista feita antes da uniao guarda o id do produto que virou repeticao.
+   * Sem seguir, aquele item abriria um produto sem oferta -- some da tela sem
+   * explicacao. Seguindo, ele abre o produto que ficou, com os precos todos.
+   * O `while` cobre a fusao em cadeia (A virou B, B virou C), e o teto evita
+   * laco infinito se algum dia um ciclo aparecer.
+   */
+  for (let salto = 0; product.merged_into && salto < 5; salto++) {
+    const alvo = await q.productById.get(product.merged_into);
+    if (!alvo) break;
+    product = alvo;
+  }
+  return montar(product, await q.offersFor.all(product.id));
 }
 
 /**
@@ -215,14 +237,31 @@ export async function hydrate(productId) {
 export async function hidratarVarios(ids) {
   if (!ids.length) return [];
   const produtos = await db.prepare('SELECT * FROM products WHERE id = ANY(?)').all(ids);
-  const ofertas = await db.prepare('SELECT * FROM offers WHERE product_id = ANY(?)').all(ids);
+
+  /**
+   * Id que virou repeticao passa a valer pelo produto que ficou.
+   *
+   * O cache de busca guarda os ids de quando a busca foi feita, e alguns deles
+   * podem ter sido unidos depois. Sem esta troca, um resultado de cache antigo
+   * traria de volta o produto vazio -- e dois ids diferentes apontando para o
+   * mesmo produto trariam o mesmo cartao duas vezes, que e exatamente o que a
+   * uniao existe para acabar.
+   */
+  const paraOVencedor = new Map(produtos.filter((p) => p.merged_into).map((p) => [p.id, p.merged_into]));
+  const alvos = [...new Set(ids.map((id) => paraOVencedor.get(id) ?? id))];
+  const faltando = alvos.filter((id) => !produtos.some((p) => p.id === id));
+  if (faltando.length) {
+    produtos.push(...(await db.prepare('SELECT * FROM products WHERE id = ANY(?)').all(faltando)));
+  }
+
+  const ofertas = await db.prepare('SELECT * FROM offers WHERE product_id = ANY(?)').all(alvos);
   const porProduto = new Map();
   for (const oferta of ofertas) {
     if (!porProduto.has(oferta.product_id)) porProduto.set(oferta.product_id, []);
     porProduto.get(oferta.product_id).push(oferta);
   }
   const porId = new Map(produtos.map((p) => [p.id, p]));
-  return ids
+  return alvos
     .map((id) => (porId.has(id) ? montar(porId.get(id), porProduto.get(id) || []) : null))
     .filter(Boolean);
 }
@@ -349,7 +388,7 @@ export async function searchLocal(term, { limit = 30 } = {}) {
       `SELECT p.id
          FROM products p
          JOIN offers o ON o.product_id = p.id AND o.price > 0
-        WHERE lower(p.name) LIKE ?
+        WHERE p.merged_into IS NULL AND lower(p.name) LIKE ?
         GROUP BY p.id
         ORDER BY COUNT(DISTINCT o.market) DESC, MIN(o.price)
         LIMIT ?`,
@@ -371,6 +410,7 @@ export function categoryCounts(mercados = []) {
          FROM products p
          JOIN offers o ON o.product_id = p.id AND o.price > 0
               ${filtro.clausula}
+        WHERE p.merged_into IS NULL
         GROUP BY p.category`,
     )
     .all(...filtro.args);
@@ -384,7 +424,7 @@ export async function productsByCategory(category, { limit = 60, offset = 0, mer
          FROM products p
          JOIN offers o ON o.product_id = p.id AND o.price > 0
               ${filtro.clausula}
-        WHERE p.category = ?
+        WHERE p.merged_into IS NULL AND p.category = ?
         GROUP BY p.id
         ORDER BY COUNT(DISTINCT o.market) DESC, p.name
         LIMIT ? OFFSET ?`,
@@ -510,7 +550,7 @@ export async function categoryView(
                 string_agg(DISTINCT o.market, ',') AS lojas
            FROM products p
            JOIN offers o ON o.product_id = p.id AND o.price > 0
-          WHERE p.category = ?
+          WHERE p.merged_into IS NULL AND p.category = ?
           GROUP BY p.id
           ORDER BY mercados DESC, p.name`,
       )
@@ -615,7 +655,7 @@ async function contarCategoria(key) {
     .prepare(
       `SELECT COUNT(*) AS n FROM products p
          JOIN offers o ON o.product_id = p.id AND o.price > 0
-        WHERE p.category = ?`,
+        WHERE p.merged_into IS NULL AND p.category = ?`,
     )
     .get(key);
   return Number(n);
@@ -636,7 +676,8 @@ export async function reclassifyAll() {
     .prepare(
       `SELECT p.id, p.name, p.category, p.category_locked, p.subcategory, p.size_label, p.size_value,
               (SELECT o.category FROM offers o WHERE o.product_id = p.id AND o.category IS NOT NULL LIMIT 1) AS raw
-         FROM products p`,
+         FROM products p
+        WHERE p.merged_into IS NULL`,
     )
     .all();
   const update = db.prepare('UPDATE products SET category = ? WHERE id = ?');
@@ -702,7 +743,7 @@ export async function alternativesIn(market, { productId = null, name = '', limi
       `SELECT p.id, p.name, p.brand, p.subcategory, p.size_label, MIN(o.price) AS preco
          FROM products p
          JOIN offers o ON o.product_id = p.id AND o.market = ? AND o.price > 0 AND o.available = 1
-        WHERE p.category = COALESCE(?, p.category) AND p.id != COALESCE(?, -1)
+        WHERE p.merged_into IS NULL AND p.category = COALESCE(?, p.category) AND p.id != COALESCE(?, -1)
         GROUP BY p.id`,
     )
     .all(market, base?.category ?? null, base?.id ?? null);
