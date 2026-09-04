@@ -57,6 +57,20 @@ export function marketInfo() {
 const MINUTOS_DE_CASTIGO = Number(process.env.MARKET_BLOCK_MINUTES || 30);
 const bloqueados = new Map();
 
+/**
+ * Poe um mercado em castigo. Chamado por quem detectou o bloqueio agora, e
+ * tambem por quem leu o bloqueio gravado de um processo anterior -- o disjuntor
+ * na memoria nao pode ser a unica memoria disso, senao cada reinicio o app
+ * volta a achar que esta tudo bem.
+ */
+export function registrarBloqueio(key, motivo, ate = Date.now() + MINUTOS_DE_CASTIGO * 60000) {
+  if (!MARKET_BY_KEY.has(key)) return;
+  bloqueados.set(key, { motivo, ate });
+}
+
+/** As chaves em castigo, para quem so precisa saber quem pular. */
+export const bloqueiosConhecidos = () => new Set(marketsBloqueados().map((b) => b.market));
+
 /** Quem esta em castigo agora, com o motivo. Vai para a tela. */
 export function marketsBloqueados() {
   const agora = Date.now();

@@ -92,7 +92,17 @@ export default function Market() {
   const [corredores, setCorredores] = useState<Corredor[]>([]);
   const [carregandoCorredores, setCarregandoCorredores] = useState(true);
   const [resultados, setResultados] = useState<Product[]>([]);
+  /**
+   * Duas listas, e nao uma, porque sao coisas de tempo diferente.
+   *
+   * `falhas` e o que deu errado *nesta* busca -- morre com a proxima palavra.
+   * `bloqueios` e o estado do servidor: qual rede fechou a porta. Estavam
+   * juntas, e o resultado era o aviso de bloqueio piscando e sumindo: a busca
+   * com termo vazio limpa as falhas dela a cada render, e levava o bloqueio
+   * embora junto.
+   */
   const [falhas, setFalhas] = useState<Falha[]>([]);
+  const [bloqueios, setBloqueios] = useState<Falha[]>([]);
   const [aberto, setAberto] = useState<string | null>(null);
   const [doCorredor, setDoCorredor] = useState<Product[]>([]);
   const [totalCorredor, setTotalCorredor] = useState(0);
@@ -157,7 +167,7 @@ export default function Market() {
       // nao so depois de uma busca: e ali que se estranha a falta dele.
       .then((d) => {
         setAquecendo(d.warmup);
-        if (d.blocked?.length) setFalhas(d.blocked);
+        setBloqueios(d.blocked ?? []);
       })
       .catch(() => {});
   }, [recarregarCorredores]);
@@ -169,7 +179,7 @@ export default function Market() {
       try {
         const d = await api.get<{ warmup: Aquecimento; blocked?: Falha[] }>('/catalog/warmup');
         setAquecendo(d.warmup);
-        setFalhas(d.blocked ?? []);
+        setBloqueios(d.blocked ?? []);
         await recarregarCorredores();
       } catch {
         /* sem rede agora; a proxima volta tenta de novo */
@@ -363,12 +373,18 @@ export default function Market() {
     setFacetas({});
   };
 
-  // Corredor nenhum com produto: banco novo, catalogo por encher.
+  // Corredor nenhum com produto. Duas causas bem diferentes: catalogo por
+  // encher (banco novo) ou filtro de mercado sobre uma rede que nao tem nada
+  // aqui. A segunda nao se resolve enchendo -- e foi exatamente o que a tela
+  // dizia errado: oferecia "Encher" para um mercado que nao deixa consultar.
   const vazio = !carregandoCorredores && corredores.length > 0 && corredores.every((c) => !c.total);
+  const vazioPorFiltro = vazio && mercados.length > 0;
 
   const nomeDoMercado = (chave: string) => markets.find((m) => m.key === chave)?.label ?? chave;
-  const bloqueados = falhas.filter((f) => f.blocked).map((f) => f.market);
-  const caidos = falhas.filter((f) => !f.blocked).map((f) => f.market);
+  // O que a tela mostra e a uniao das duas, sem repetir mercado.
+  const todasAsFalhas = [...bloqueios, ...falhas.filter((f) => !bloqueios.some((b) => b.market === f.market))];
+  const bloqueados = todasAsFalhas.filter((f) => f.blocked).map((f) => f.market);
+  const caidos = todasAsFalhas.filter((f) => !f.blocked).map((f) => f.market);
   const legendaDoTopo =
     destino === 'carrinho'
       ? 'adicionando no carrinho em andamento'
@@ -455,18 +471,33 @@ export default function Market() {
                 </>
               ) : (
                 <>
-                  <p className="text-sm font-bold">As prateleiras estão vazias</p>
+                  <p className="text-sm font-bold">
+                    {vazioPorFiltro
+                      ? `Nada de ${mercados.map(nomeDoMercado).join(' e ')} no catálogo`
+                      : 'As prateleiras estão vazias'}
+                  </p>
                   <p className="text-muted-foreground text-xs">
-                    O catálogo vem dos quatro mercados. Dá para buscar um produto direto, ou encher os corredores
-                    agora.
+                    {vazioPorFiltro
+                      ? bloqueados.some((b) => mercados.includes(b))
+                        ? 'Essa rede está bloqueando consultas automáticas, então nada dela entrou. Encher não resolve — solte o filtro para ver os outros três.'
+                        : 'Nenhum produto dessa rede entrou no catálogo ainda. Solte o filtro para ver os outros.'
+                      : 'O catálogo vem dos quatro mercados. Dá para buscar um produto direto, ou encher os corredores agora.'}
                   </p>
                 </>
               )}
             </div>
-            {!aquecendo?.rodando && (
-              <Button size="sm" onClick={() => void encherPrateleiras()}>
-                Encher
+            {/* Com filtro de mercado, o botao util e o que tira o filtro: e o
+                unico dos dois que muda algo na tela. */}
+            {vazioPorFiltro ? (
+              <Button size="sm" variant="outline" onClick={() => setMercados([])}>
+                Soltar filtro
               </Button>
+            ) : (
+              !aquecendo?.rodando && (
+                <Button size="sm" onClick={() => void encherPrateleiras()}>
+                  Encher
+                </Button>
+              )
             )}
           </div>
         )}
@@ -478,7 +509,7 @@ export default function Market() {
           </div>
         )}
 
-        {falhas.length > 0 && (
+        {todasAsFalhas.length > 0 && (
           <div className="bg-accent/20 text-accent-foreground mt-3 flex items-start gap-2 rounded-lg px-3.5 py-2.5 text-sm font-medium">
             <TriangleAlert className="mt-0.5 size-4 shrink-0" />
             <span>

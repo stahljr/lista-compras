@@ -6,6 +6,22 @@ import { MARKETS, MARKET_BY_KEY, acrossMarkets } from './markets/index.js';
 
 const SEARCH_TTL_MINUTES = Number(process.env.SEARCH_TTL_MINUTES || 360);
 
+/**
+ * Depois de quantos dias um preco deixa de ser "o preco" e passa a ser "o
+ * preco daquele dia".
+ *
+ * Tres dias porque o refresher reconsulta bem mais rapido que isso: se uma
+ * etiqueta chegou a essa idade, aquele mercado parou de responder.
+ */
+const DIAS_ATE_ENVELHECER = Number(process.env.PRICE_STALE_DAYS || 3);
+
+const precoEnvelhecido = (quando) => {
+  if (!quando) return false;
+  const texto = String(quando);
+  const t = Date.parse(texto.includes('T') ? texto : `${texto.replace(' ', 'T')}Z`);
+  return Number.isNaN(t) ? false : (Date.now() - t) / 86400000 > DIAS_ATE_ENVELHECER;
+};
+
 /** Chave de identidade do produto: EAN quando existe, senao o nome normalizado. */
 export function matchKey({ ean, name }) {
   if (ean && /^\d{8,14}$/.test(ean)) return `ean:${ean}`;
@@ -147,9 +163,24 @@ function montar(product, rows) {
       url: o.url,
       name: o.name,
       updatedAt: o.updated_at,
+      // Calculado aqui, e nao na tela: a mesma regra vale para o cartao, para
+      // o comparador e para a estimativa da compra. Duas implementacoes da
+      // mesma regra acabariam discordando.
+      stale: precoEnvelhecido(o.updated_at),
     }));
   const withStock = offers.filter((o) => o.available);
-  const cheapest = withStock[0] || offers[0] || null;
+  const frescas = withStock.filter((o) => !o.stale);
+  /**
+   * O "mais barato" prefere preco fresco.
+   *
+   * Um mercado que parou de responder guarda o ultimo preco que deu, e com o
+   * tempo ele vira o menor numero da lista so por estar velho. Sem esta
+   * preferencia o comparador manda a compra para lá por um preco que talvez
+   * nao exista mais -- e o selo de economia e calculado contra ele. Preco
+   * velho so vira o mais barato quando nao ha nenhum fresco: ai e a unica
+   * informacao que temos, e a tela diz de quando e.
+   */
+  const cheapest = frescas[0] || withStock[0] || offers[0] || null;
   return {
     id: product.id,
     ean: product.ean,
@@ -416,7 +447,13 @@ export const linhaDeProduto = (p) => {
     // O preco do produto, para ordenar, e o mais barato que se acha dele: e a
     // resposta a "quanto me custa levar isto", que e a pergunta de quem
     // ordena por preco.
-    preco: validas.length ? Math.min(...validas.map((o) => o.price)) : null,
+    // Preco envelhecido nao conta enquanto houver fresco: ordenar por "menor
+    // preco" nao pode subir produto por causa de etiqueta vencida.
+    preco: (() => {
+      const frescas = validas.filter((o) => !o.stale);
+      const fonte = frescas.length ? frescas : validas;
+      return fonte.length ? Math.min(...fonte.map((o) => o.price)) : null;
+    })(),
   };
 };
 

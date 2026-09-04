@@ -9,6 +9,8 @@ export type Offer = {
   url: string | null;
   name: string;
   updatedAt: string;
+  /** Preço com idade de merecer aviso. Quem decide é o servidor. */
+  stale?: boolean;
 };
 
 export type Product = {

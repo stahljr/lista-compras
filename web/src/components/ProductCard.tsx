@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { money, quantity as fmtQty } from '@/lib/format';
+import { diaEMes, money, precoVelho, quantity as fmtQty } from '@/lib/format';
 import { useStore } from '@/lib/store';
 import { roundQty, stepOf } from '@/lib/unit';
 import type { Product } from '@/lib/types';
@@ -133,6 +133,12 @@ export function ProductCard({
               <p className="text-muted-foreground text-[11.5px] font-semibold">
                 {melhor.marketLabel}
                 {outros > 0 && <span className="text-muted-foreground/70 font-normal"> · +{outros}</span>}
+                {/* Preco velho tem de dizer de quando e. Sem isto o cartao
+                    apresenta o preco de duas semanas atras com a mesma cara do
+                    de hoje, e a conta da compra sai errada sem ninguem ver. */}
+                {(melhor.stale ?? precoVelho(melhor.updatedAt)) && (
+                  <span className="text-muted-foreground/70 font-normal"> · preço de {diaEMes(melhor.updatedAt)}</span>
+                )}
               </p>
             </>
           ) : (
