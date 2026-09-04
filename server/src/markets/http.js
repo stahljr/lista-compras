@@ -23,6 +23,45 @@ function ehDesafio(status, corpo) {
 }
 
 /**
+ * GET de uma pagina, para quando o preco mora no HTML e nao numa API.
+ *
+ * Usa os mesmos cuidados do getJson -- timeout, retentativa, deteccao de muro
+ * -- porque a diferenca aqui e so o formato da resposta.
+ */
+export async function getText(url, { timeout = 15000, retries = 1, headers = {} } = {}) {
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'user-agent': UA,
+          accept: 'text/html,application/xhtml+xml',
+          'accept-language': 'pt-BR,pt;q=0.9',
+          ...headers,
+        },
+      });
+      if (res.status === 404) return null;
+      const corpo = await res.text();
+      if (!res.ok) {
+        if (ehDesafio(res.status, corpo)) throw new MercadoBloqueado(new URL(url).host);
+        throw new Error(`HTTP ${res.status}`);
+      }
+      return corpo;
+    } catch (err) {
+      lastError = err;
+      if (err instanceof MercadoBloqueado) throw err;
+      if (attempt < retries) await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastError;
+}
+
+/**
  * GET JSON com timeout e retentativa. Os sites dos mercados as vezes devolvem
  * 5xx sob carga, entao vale tentar de novo antes de desistir do mercado --
  * menos quando a resposta e um muro de protecao, que retentar so piora.

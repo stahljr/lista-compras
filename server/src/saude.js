@@ -1,5 +1,5 @@
 import { db, metaGet, metaSet } from './db.js';
-import { MARKETS, registrarBloqueio, bloqueiosConhecidos, marketsBloqueados } from './markets/index.js';
+import { MARKETS, registrarBloqueio, liberar, bloqueiosConhecidos, marketsBloqueados } from './markets/index.js';
 
 /**
  * Quem esta atendendo, e quem fechou a porta.
@@ -49,8 +49,8 @@ async function guardarBloqueios() {
  * sabemos estar bloqueados -- o objetivo e saber a verdade sem virar carga
  * para eles.
  */
-export async function sondarMercados() {
-  const conhecidos = bloqueiosConhecidos();
+export async function sondarMercados({ inclusiveOsBloqueados = false } = {}) {
+  const conhecidos = inclusiveOsBloqueados ? new Set() : bloqueiosConhecidos();
   const alvos = MARKETS.filter((m) => !conhecidos.has(m.key));
   if (!alvos.length) return marketsBloqueados();
 
@@ -58,6 +58,10 @@ export async function sondarMercados() {
     alvos.map(async (m) => {
       try {
         await m.search(TERMO, 1);
+        // Atendeu: se estava em castigo, sai. E o caso de um deploy que trocou
+        // o caminho de leitura daquele mercado -- o bloqueio gravado era do
+        // codigo antigo, e mante-lo puniria o conserto.
+        liberar(m.key);
       } catch (err) {
         if (err?.bloqueado) {
           registrarBloqueio(m.key, String(err.message));
@@ -80,8 +84,11 @@ export function sondarNoBoot({ atraso = 4000 } = {}) {
   setTimeout(() => {
     void (async () => {
       const vivos = await carregarBloqueios();
-      if (vivos.length) console.warn(`[saude] bloqueio gravado ainda vale: ${vivos.join(', ')}`);
-      await sondarMercados().catch(() => {});
+      if (vivos.length) console.warn(`[saude] bloqueio gravado: ${vivos.join(', ')} -- conferindo`);
+      // Sonda todos, inclusive os gravados como bloqueados: um deploy pode ter
+      // trocado o jeito de ler aquele mercado, e confiar no bloqueio antigo
+      // deixaria a rede fora por nada.
+      await sondarMercados({ inclusiveOsBloqueados: vivos.length > 0 }).catch(() => {});
     })();
   }, atraso).unref?.();
 }

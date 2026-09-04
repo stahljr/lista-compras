@@ -68,6 +68,11 @@ export function registrarBloqueio(key, motivo, ate = Date.now() + MINUTOS_DE_CAS
   bloqueados.set(key, { motivo, ate });
 }
 
+/** Tira do castigo: o mercado voltou a atender. */
+export function liberar(key) {
+  if (bloqueados.delete(key)) console.log(`[mercado] ${key} voltou a atender`);
+}
+
 /** As chaves em castigo, para quem so precisa saber quem pular. */
 export const bloqueiosConhecidos = () => new Set(marketsBloqueados().map((b) => b.market));
 
