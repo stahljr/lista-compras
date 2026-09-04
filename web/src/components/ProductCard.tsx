@@ -11,8 +11,9 @@ import { roundQty, stepOf } from '@/lib/unit';
 import type { Product } from '@/lib/types';
 
 export const EMOJI: Record<string, string> = {
-  hortifruti: '🥬', padaria: '🥖', acougue: '🥩', frios: '🧀', matinais: '☕',
-  mercearia: '🍚', doces: '🍫', congelados: '🧊', bebidas: '🧴', limpeza: '🧽',
+  hortifruti: '🥬', padaria: '🥖', acougue: '🥩', frios: '🧀', laticinios: '🥛', matinais: '☕',
+  mercearia: '🍚', massas: '🍝', molhos: '🍅', temperos: '🧂', oleos: '🫒',
+  doces: '🍫', congelados: '🧊', bebidas: '🧴', limpeza: '🧽',
   higiene: '🧼', bebe: '🍼', pet: '🐾', casa: '🏠', outros: '📦',
 };
 

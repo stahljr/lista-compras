@@ -44,61 +44,64 @@ const SUBCATEGORIAS = {
     ['farmacia', 'Farmacinha', /analgesico|dipirona|paracetamol|ibuprofeno|band.?aid|curativo|soro fisiologico|alcool (70|gel|etilico)|termometro|preservativo/],
   ],
   /**
-   * A mercearia e o corredor maior de longe -- mil e duzentos produtos -- e por
-   * isso o unico em que o "tipo" precisa ser fino para servir de algo.
+   * A mercearia deixou de ser deposito.
    *
-   * As divisoes abaixo saem de medir o corredor, e nao de imaginar como ele
-   * seria. Quatro coisas que a medicao mostrou:
-   *
-   * 1. "Molhos" tinha 366 produtos, 30% do corredor: molho de tomate, ketchup,
-   *    maionese, mostarda e barbecue juntos. Filtro que devolve um terco da
-   *    prateleira nao afunila nada -- e ninguem vai ao mercado buscar "molho",
-   *    vai buscar maionese. Virou molho de tomate, ketchup, maionese, mostarda
-   *    e um resto para shoyu e afins;
-   * 2. os enlatados vinham como molho, porque a lata diz "Sardinha ao Molho de
-   *    Tomate" e a regra procurava "molho" em qualquer lugar do nome. Agora a
-   *    lata vem antes, e o peixe manda sobre o molho em que ele nada;
-   * 3. "Caldo Bom" e marca de farinha e de fuba, e a regra de tempero procurava
-   *    "caldo": farinha de mandioca caia em Temperos. O veto resolve;
-   * 4. "Óleo e vinagre" eram 58 azeites e 57 vinagres no mesmo filtro, que sao
-   *    duas compras que nao se confundem. E massa longa e massa curta tambem
-   *    nao: quem quer espaguete nao quer parafuso.
-   *
-   * A ordem importa -- a primeira regra que casar ganha -- e por isso o
-   * especifico vem antes do generico: lata antes de molho, massa antes de tudo
-   * (para "Molho para Massas" nao virar massa, o veto cuida).
+   * Ela tinha 860 dos 1506 produtos do catalogo -- 57% -- porque massas,
+   * molhos, temperos e oleos moravam dentro dela como "tipo". Corredor desse
+   * tamanho nao afunila: sao quatro viagens diferentes a loja, e cada uma
+   * virou placa propria. Aqui ficou o que sobra e que de fato se procura
+   * junto: o basico do armario e a lata.
    */
   mercearia: [
     // O veto existe porque "Biscoito de Arroz" nao e arroz: a palavra esta la,
     // o produto e outro. Sem isso o filtro de arroz enche de snack.
     ['arroz_feijao', 'Arroz e feijão', /\barroz\b|\bfeijao\b|lentilha|grao de bico|canjica|milho para pipoca|quinoa/, /biscoito|bolacha|snack|farinha de|bebida de|cracker/],
-
-    // Massa longa e massa curta sao escolhas diferentes na mesma receita.
-    ['massa_longa', 'Massa longa', /espaguete|spaghetti|talharim|linguine|fettucc?ine|cabelo de anjo|bavette|pappardelle|vermicelli/, /molho|tempero/],
-    ['massa_curta', 'Massa curta', /parafuso|fusilli|\bpenne\b|conchiglione|conchinha|rigatoni|farfalle|gravatinha|ave.?maria|argolinha|padre.?nosso|\bcaracol\b|talharim curto|macarrao (para|de) sopa/, /molho|tempero/],
-    ['massa_instantanea', 'Macarrão instantâneo', /instantaneo|\bmiojo\b|\blamen\b|\bramen\b|cup noodles/],
-    ['massas', 'Outras massas', /macarrao|lasanha|canelone|rondelli|nhoque|\bmassa\b|massa (para|de) /, /molho|tempero/],
-
-    // Lata e vidro antes do molho: "Sardinha ao Molho de Tomate" e peixe.
-    ['peixe_lata', 'Atum e sardinha', /\batum\b|\bsardinha\b|anchova|\bbacalhau\b em conserva/],
+    ['peixe_lata', 'Atum e sardinha', /\batum\b|\bsardinha\b|anchova/],
     ['enlatados', 'Conservas e legumes', /milho.?verde|\bervilha\b|azeitona|palmito|seleta|conserva|pepino em|\bpate\b|patê|aspargo|cogumelo|champignon|tomate seco/],
-
-    ['tomate', 'Molho de tomate', /molho (de )?tomate|extrato (de )?tomate|polpa (de )?tomate|tomate pelado|passata|molho pronto|molho refogado|molho bolonhesa|molho sugo|molho para massas?/],
-    ['maionese', 'Maionese', /maionese/],
-    ['ketchup', 'Ketchup', /ketchup|catchup/],
-    ['mostarda', 'Mostarda', /mostarda/],
-    ['molhos', 'Shoyu e outros molhos', /\bshoyu\b|molho de soja|tarê|\btare\b|barbecue|\bbbq\b|molho ingles|worcester|molho de pimenta|pimenta em|molho de alho|molho agridoce|\bteriyaki\b/],
-
-    // "Caldo Bom" e marca: sem o veto, farinha de mandioca e fuba caem aqui.
-    ['temperos', 'Temperos', /\bsal\b|sal refinado|tempero|colorau|oregano|cominho|pimenta do reino|alho e sal|\bcaldo\b|folha de louro|canela|acafrao|curry|\bpaprica\b|noz.?moscada|\bmanjericao\b|\bsalsa\b desidratada/, /caldo bom|farinha|\bfuba\b|snack|biscoito|bruschette|feijoadinha|azeite/],
-
-    ['azeite', 'Azeite e óleo', /azeite|\boleo\b|banha/],
-    ['vinagre', 'Vinagre', /vinagre|\baceto\b|balsamico/],
-
     ['farinhas', 'Farinhas', /farinha|\bfuba\b|amido de milho|polvilho|trigo para|farofa|panko|\bmaisena\b|\bmaizena\b/],
     ['acucar', 'Açúcar e adoçante', /\bacucar\b|adocante|rapadura|melado|\bmel\b/],
     ['sopas', 'Sopas e prontos', /\bsopa\b|creme de cebola|cuscuz|\bpure\b|risoto pronto|feijoada em|caldo pronto/],
     ['coco', 'Coco e leites vegetais', /leite de coco|leite vegetal|bebida de (amendoas|aveia|soja)|coco ralado/],
+  ],
+
+  // Massa longa e massa curta sao escolhas diferentes na mesma receita: quem
+  // quer espaguete nao quer parafuso. O veto de molho existe porque "Molho
+  // para Massas" e molho, e o nome traz a palavra.
+  massas: [
+    ['longa', 'Espaguete e talharim', /espaguete|spaghetti|talharim|linguine|fettucc?ine|cabelo de anjo|bavette|pappardelle|vermicelli/, /molho|tempero/],
+    ['curta', 'Parafuso, penne e afins', /parafuso|fusilli|\bpenne\b|conchiglione|conchinha|rigatoni|farfalle|gravatinha|ave.?maria|argolinha|padre.?nosso|\bcaracol\b|macarrao (para|de) sopa/, /molho|tempero/],
+    ['instantanea', 'Instantâneo', /instantaneo|\bmiojo\b|\blamen\b|\bramen\b|cup noodles/],
+    ['forno', 'Lasanha e recheadas', /lasanha|canelone|rondelli|nhoque|capeletti|ravioli|tortelli/],
+    ['integral', 'Integral e sem glúten', /integral|sem gluten|grao inteiro|arroz e milho/],
+  ],
+
+  // "Molhos" era um filtro so com 366 produtos, um terco do corredor antigo.
+  // Ninguem vai ao mercado buscar "molho" -- vai buscar maionese.
+  molhos: [
+    ['tomate', 'Molho de tomate', /molho (de )?tomate|extrato (de )?tomate|polpa (de )?tomate|tomate pelado|passata|molho pronto|molho refogado|molho bolonhesa|molho sugo|molho para massas?/],
+    ['maionese', 'Maionese', /maionese/],
+    ['ketchup', 'Ketchup', /ketchup|catchup/],
+    ['mostarda', 'Mostarda', /mostarda/],
+    ['pimenta', 'Pimenta', /molho de pimenta|\btabasco\b|pimenta em (conserva|molho)|sriracha/],
+    ['orientais', 'Shoyu e orientais', /\bshoyu\b|molho de soja|tarê|\btare\b|\bteriyaki\b|agridoce|\bwasabi\b/],
+    ['salada', 'Para salada e churrasco', /barbecue|\bbbq\b|molho ingles|worcester|molho (para|de) salada|molho cesar|vinagrete|chimichurri/],
+  ],
+
+  // "Caldo Bom" e marca de farinha e de fuba, e a regra procurava "caldo": sem
+  // o veto, farinha de mandioca cai aqui.
+  temperos: [
+    ['sal', 'Sal', /\bsal\b|sal refinado|sal grosso|sal marinho|\bflor de sal\b/, /salsa|salsicha|salsaretti/],
+    ['caldos', 'Caldos e sazonadores', /\bcaldo\b|sazon|tempero pronto|tempero completo|\bknorr\b|\bmaggi\b/, /caldo bom|farinha|\bfuba\b/],
+    ['ervas', 'Ervas', /oregano|manjericao|folha de louro|\bsalsa\b desidratada|cebolinha|\bervas\b|tomilho|rosmarinho|romario|coentro/],
+    ['moidos', 'Pimenta, colorau e curry', /pimenta do reino|colorau|\bpaprica\b|\bcurry\b|cominho|acafrao|noz.?moscada|\bcravo\b|\bcanela\b|\bgengibre\b em po|acucar de baunilha/],
+    ['alho', 'Alho e cebola', /alho e sal|alho (frito|granulado|em po)|cebola (em po|granulada|desidratada)/],
+  ],
+
+  oleos: [
+    ['azeite', 'Azeite', /azeite/],
+    ['oleo', 'Óleo', /\boleo\b|banha|gordura de coco|gordura vegetal/],
+    ['vinagre', 'Vinagre', /vinagre/],
+    ['especiais', 'Aceto e especiais', /\baceto\b|balsamico|oleo de (coco|linhaca|abacate|gergelim)/],
   ],
   hortifruti: [
     ['ovos', 'Ovos', /\bovos?\b/],
