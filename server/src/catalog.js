@@ -705,7 +705,7 @@ async function contarCategoria(key) {
 
 // Suba este numero ao mexer nas regras de categoria: a categoria fica gravada
 // no produto, entao corrigir a regra nao arruma sozinho o que ja foi salvo.
-const CLASSIFIER_VERSION = 5;
+const CLASSIFIER_VERSION = 8;
 
 /**
  * Reclassifica o catalogo com as regras atuais. Usa a categoria que o mercado

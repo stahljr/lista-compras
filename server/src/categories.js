@@ -93,11 +93,25 @@ const CONGELADO = /congelad|nuggets|empanad|sorvete|\bacai\b|batata frita|pizza 
 // mercearia.
 const BASICO = /\b(arroz|feijao|macarrao|espaguete|acucar|farinha|fuba|amido|azeite|vinagre)\b|oleo de soja|sal refinado/;
 
+/**
+ * O que tem palavra de mercearia no nome e nao e mercearia.
+ *
+ * O atalho do BASICO existe para o essencial nao depender da categoria que o
+ * mercado manda, e isso e bom -- mas ele atropelava: "Biscoito de Arroz" e
+ * "Snack de Arroz" tem "arroz" no nome e iam para a mercearia, onde ficavam
+ * sem tipo nenhum, atrapalhando o corredor. Sao 38 produtos assim no catalogo
+ * medido, quase todos biscoito e snack.
+ *
+ * O mesmo raciocinio dos vetos de subcategoria: a palavra esta la, o produto e
+ * outro. Vetado aqui, ele desce para as regras normais e cai em Doces.
+ */
+const NAO_BASICO = /biscoito|bolacha|\bsnack\b|cracker|salgadinho|\bchips\b|wafer|\bbarra de\b|bebida de (arroz|amendoas|aveia|soja)|leite de (arroz|amendoas|aveia)|iogurte|suplemento|whey|creme de avela/;
+
 export function classify(rawCategory, productName) {
   const cat = fold(rawCategory);
   const name = fold(productName);
   for (const [key, re] of ESPECIFICOS) if (re.test(name)) return key;
-  if (BASICO.test(name) && !CONGELADO.test(name)) return 'mercearia';
+  if (BASICO.test(name) && !CONGELADO.test(name) && !NAO_BASICO.test(name)) return 'mercearia';
   for (const [key, re] of RULES) if (re.test(cat)) return key;
   for (const [key, re] of RULES) {
     if (key === 'hortifruti' && PROCESSADO.test(name)) continue;

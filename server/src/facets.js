@@ -43,18 +43,61 @@ const SUBCATEGORIAS = {
     ['barbear', 'Barbear', /barbear|gilette|gillette|\blamina|aparelho de barbear|pos.?barba/],
     ['farmacia', 'Farmacinha', /analgesico|dipirona|paracetamol|ibuprofeno|band.?aid|curativo|soro fisiologico|alcool (70|gel|etilico)|termometro|preservativo/],
   ],
+  /**
+   * A mercearia e o corredor maior de longe -- mil e duzentos produtos -- e por
+   * isso o unico em que o "tipo" precisa ser fino para servir de algo.
+   *
+   * As divisoes abaixo saem de medir o corredor, e nao de imaginar como ele
+   * seria. Quatro coisas que a medicao mostrou:
+   *
+   * 1. "Molhos" tinha 366 produtos, 30% do corredor: molho de tomate, ketchup,
+   *    maionese, mostarda e barbecue juntos. Filtro que devolve um terco da
+   *    prateleira nao afunila nada -- e ninguem vai ao mercado buscar "molho",
+   *    vai buscar maionese. Virou molho de tomate, ketchup, maionese, mostarda
+   *    e um resto para shoyu e afins;
+   * 2. os enlatados vinham como molho, porque a lata diz "Sardinha ao Molho de
+   *    Tomate" e a regra procurava "molho" em qualquer lugar do nome. Agora a
+   *    lata vem antes, e o peixe manda sobre o molho em que ele nada;
+   * 3. "Caldo Bom" e marca de farinha e de fuba, e a regra de tempero procurava
+   *    "caldo": farinha de mandioca caia em Temperos. O veto resolve;
+   * 4. "Óleo e vinagre" eram 58 azeites e 57 vinagres no mesmo filtro, que sao
+   *    duas compras que nao se confundem. E massa longa e massa curta tambem
+   *    nao: quem quer espaguete nao quer parafuso.
+   *
+   * A ordem importa -- a primeira regra que casar ganha -- e por isso o
+   * especifico vem antes do generico: lata antes de molho, massa antes de tudo
+   * (para "Molho para Massas" nao virar massa, o veto cuida).
+   */
   mercearia: [
     // O veto existe porque "Biscoito de Arroz" nao e arroz: a palavra esta la,
     // o produto e outro. Sem isso o filtro de arroz enche de snack.
-    ['arroz_feijao', 'Arroz e feijão', /\barroz\b|\bfeijao\b|lentilha|grao de bico|canjica|milho para pipoca|quinoa/, /biscoito|bolacha|snack|farinha de|bebida de/],
-    ['massas', 'Massas', /macarrao|espaguete|\bpenne\b|parafuso|talharim|nhoque|massa (para|de) |instantaneo|miojo/],
-    ['oleo', 'Óleo e vinagre', /\boleo\b|azeite|vinagre|banha/],
-    ['molhos', 'Molhos', /\bmolho|extrato de tomate|polpa de tomate|ketchup|maionese|mostarda|shoyu|barbecue|pimenta em|tomate pelado/],
-    ['temperos', 'Temperos', /\bsal\b|sal refinado|tempero|colorau|oregano|cominho|pimenta do reino|alho e sal|\bcaldo\b|folha de louro|canela|acafrao|curry/],
-    ['farinhas', 'Farinhas', /farinha|\bfuba\b|amido de milho|polvilho|trigo para|farofa|panko/],
-    ['acucar', 'Açúcar', /\bacucar\b|adocante|rapadura|melado/],
-    ['enlatados', 'Enlatados e conservas', /\batum\b|sardinha em|milho verde|ervilha em|azeitona|palmito|seleta|conserva|pepino em|patê|pate de/],
-    ['sopas', 'Sopas e prontos', /\bsopa\b|creme de cebola|cuscuz|\bpure\b|risoto pronto|feijoada em/],
+    ['arroz_feijao', 'Arroz e feijão', /\barroz\b|\bfeijao\b|lentilha|grao de bico|canjica|milho para pipoca|quinoa/, /biscoito|bolacha|snack|farinha de|bebida de|cracker/],
+
+    // Massa longa e massa curta sao escolhas diferentes na mesma receita.
+    ['massa_longa', 'Massa longa', /espaguete|spaghetti|talharim|linguine|fettucc?ine|cabelo de anjo|bavette|pappardelle|vermicelli/, /molho|tempero/],
+    ['massa_curta', 'Massa curta', /parafuso|fusilli|\bpenne\b|conchiglione|conchinha|rigatoni|farfalle|gravatinha|ave.?maria|argolinha|padre.?nosso|\bcaracol\b|talharim curto|macarrao (para|de) sopa/, /molho|tempero/],
+    ['massa_instantanea', 'Macarrão instantâneo', /instantaneo|\bmiojo\b|\blamen\b|\bramen\b|cup noodles/],
+    ['massas', 'Outras massas', /macarrao|lasanha|canelone|rondelli|nhoque|\bmassa\b|massa (para|de) /, /molho|tempero/],
+
+    // Lata e vidro antes do molho: "Sardinha ao Molho de Tomate" e peixe.
+    ['peixe_lata', 'Atum e sardinha', /\batum\b|\bsardinha\b|anchova|\bbacalhau\b em conserva/],
+    ['enlatados', 'Conservas e legumes', /milho.?verde|\bervilha\b|azeitona|palmito|seleta|conserva|pepino em|\bpate\b|patê|aspargo|cogumelo|champignon|tomate seco/],
+
+    ['tomate', 'Molho de tomate', /molho (de )?tomate|extrato (de )?tomate|polpa (de )?tomate|tomate pelado|passata|molho pronto|molho refogado|molho bolonhesa|molho sugo|molho para massas?/],
+    ['maionese', 'Maionese', /maionese/],
+    ['ketchup', 'Ketchup', /ketchup|catchup/],
+    ['mostarda', 'Mostarda', /mostarda/],
+    ['molhos', 'Shoyu e outros molhos', /\bshoyu\b|molho de soja|tarê|\btare\b|barbecue|\bbbq\b|molho ingles|worcester|molho de pimenta|pimenta em|molho de alho|molho agridoce|\bteriyaki\b/],
+
+    // "Caldo Bom" e marca: sem o veto, farinha de mandioca e fuba caem aqui.
+    ['temperos', 'Temperos', /\bsal\b|sal refinado|tempero|colorau|oregano|cominho|pimenta do reino|alho e sal|\bcaldo\b|folha de louro|canela|acafrao|curry|\bpaprica\b|noz.?moscada|\bmanjericao\b|\bsalsa\b desidratada/, /caldo bom|farinha|\bfuba\b|snack|biscoito|bruschette|feijoadinha|azeite/],
+
+    ['azeite', 'Azeite e óleo', /azeite|\boleo\b|banha/],
+    ['vinagre', 'Vinagre', /vinagre|\baceto\b|balsamico/],
+
+    ['farinhas', 'Farinhas', /farinha|\bfuba\b|amido de milho|polvilho|trigo para|farofa|panko|\bmaisena\b|\bmaizena\b/],
+    ['acucar', 'Açúcar e adoçante', /\bacucar\b|adocante|rapadura|melado|\bmel\b/],
+    ['sopas', 'Sopas e prontos', /\bsopa\b|creme de cebola|cuscuz|\bpure\b|risoto pronto|feijoada em|caldo pronto/],
     ['coco', 'Coco e leites vegetais', /leite de coco|leite vegetal|bebida de (amendoas|aveia|soja)|coco ralado/],
   ],
   hortifruti: [
@@ -269,6 +312,18 @@ export const DIMENSOES = {
     valores: (r) => (r.subcategory ? [r.subcategory] : ['outros']),
     rotulo: (chave, _v, ctx) => (chave === 'outros' ? 'Outros' : subLabel(ctx.category, chave)),
     ordem: (a, b, ctx) => ordemSub(ctx.category, a.key) - ordemSub(ctx.category, b.key),
+    /**
+     * Tipo com um produto so nao ajuda a afunilar, e enche a barra.
+     *
+     * O catalogo entra aos poucos, entao um tipo legitimo pode nascer com um
+     * item -- "Macarrão instantâneo" tinha 1 na medicao. Ele volta a aparecer
+     * sozinho quando o corredor encher, e por isso o corte e por contagem e
+     * nao uma lista de excecoes. Mesmo criterio de marca e tamanho.
+     */
+    corte: (itens) => {
+      const usados = itens.filter((i) => i.count > 1);
+      return usados.length >= 2 ? usados : itens;
+    },
   },
   category: {
     valores: (r) => (r.category ? [r.category] : []),
